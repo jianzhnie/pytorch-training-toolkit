@@ -4,13 +4,13 @@ from typing import Callable, Dict, Optional, Tuple
 
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-from torch import nn
 from torch.cuda.amp import GradScaler, autocast
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel as NativeDDP
 
 
 def reduce_tensor(tensor: torch.Tensor) -> torch.Tensor:
@@ -32,6 +32,7 @@ def init_distribute_fn(args):
         args.local_rank = 0
 
     args.gpu = 0
+    args.rank = 0
     args.world_size = 1
 
     if args.distributed:
@@ -39,6 +40,14 @@ def init_distribute_fn(args):
         torch.cuda.set_device(args.gpu)
         dist.init_process_group(backend="nccl", init_method="env://")
         args.world_size = torch.distributed.get_world_size()
+        args.rank = torch.distributed.get_rank()
+
+        print(
+            "Training in distributed mode with multiple processes, 1 GPU per process. Process %d, total %d."
+            % (args.rank, args.world_size)
+        )
+    else:
+        print("Training with a single process on %s ." % args.gpu)
 
     if args.seed is not None:
         print(f"Using seed = {args.seed}")
@@ -74,8 +83,6 @@ class TorchTrainer:
         self.auto_mixed_persision = auto_mixed_percision
         self.divide_factor = 1
         self.is_distributed = False
-        self._fwd_bwd = None
-        self._forward = None
         self.steps_since_update = 0
         self.grad_scaler = GradScaler(
             init_scale=static_loss_scale,
@@ -90,8 +97,34 @@ class TorchTrainer:
         stream = torch.cuda.Stream()
         stream.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(stream):
-            self.model = DDP(self.model, device_ids=[gpu_id], output_device=gpu_id)
+            self.model = NativeDDP(
+                self.model,
+                device_ids=[gpu_id],
+                output_device=gpu_id,
+            )
         torch.cuda.current_stream().wait_stream(stream)
+
+    def distributed_init(self, model: nn.Module, gpu_id) -> None:
+        # For multiprocessing distributed, DistributedDataParallel constructor
+        # should always set the single device scope, otherwise,
+        # DistributedDataParallel will use all available devices.
+        if gpu_id is not None:
+            torch.cuda.set_device(gpu_id)
+            model.cuda(gpu_id)
+            # When using a single GPU per process and per
+            # DistributedDataParallel, we need to divide the batch size
+            # ourselves based on the total number of GPUs we have
+            model = NativeDDP(
+                model,
+                device_ids=[gpu_id],
+                output_device=gpu_id,
+                find_unused_parameters=True,
+            )
+        else:
+            model.cuda()
+            # DistributedDataParallel will divide and allocate batch_size to all
+            # available GPUs if device_ids are not set
+            model = NativeDDP(model, output_device=0)
 
     def forward_fn(
         self,
@@ -99,19 +132,19 @@ class TorchTrainer:
         targets: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with torch.no_grad(), autocast(enabled=self.auto_mixed_persision):
-            output = self.model(inputs)
-            loss = None if self.loss_fn is None else self.loss_fn(output, targets)
+            outputs = self.model(inputs)
+            loss = None if self.loss_fn is None else self.loss_fn(outputs, targets)
 
-        return output if loss is None else loss, output
+        return outputs if loss is None else loss, outputs
 
     def backward_fn(
         self,
         inputs: torch.Tensor,
         targets: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        output, loss = self.forward_fn(inputs, targets)
+        outputs, loss = self.forward_fn(inputs, targets)
         self.grad_scaler.scale(loss).backward()
-        return output, loss
+        return loss, outputs
 
     def forward_backward(
         self,
@@ -119,7 +152,8 @@ class TorchTrainer:
         targets: torch.Tensor,
     ) -> torch.Tensor:
         with autocast(enabled=self.auto_mixed_persision):
-            loss = self.loss_fn(self.model(inputs), targets)
+            outputs = self.model(inputs)
+            loss = self.loss_fn(outputs, targets)
             loss /= self.divide_factor
 
         self.grad_scaler.scale(loss).backward()
@@ -153,9 +187,11 @@ class TorchTrainer:
         torch.cuda.synchronize()
         return loss
 
-    def validation_steps(self) -> Dict[str, Callable]:
-        val_step_dict: Dict[str, Callable] = {"val": self.forward_fn}
-        return val_step_dict
+    def validation_steps(self, inputs, targets) -> Dict[str, Callable]:
+        inputs = inputs.cuda()
+        targets = targets.cuda()
+        loss, outputs = self.forward_fn(inputs, targets)
+        return loss, outputs
 
     def train_epoch(
         self,
@@ -170,17 +206,17 @@ class TorchTrainer:
                     reduced_loss = reduce_tensor(loss.detach())
                 else:
                     reduced_loss = loss.detach()
-                print(reduced_loss)
+            print("Training loss: ", reduced_loss)
         return reduced_loss
 
-    def validate_epoch(self, infer_fn, val_loader, with_loss=True) -> None:
+    def validate_epoch(self, val_loader, with_loss=True) -> None:
         data_iter = enumerate(val_loader)
 
         for i, (inputs, targets) in data_iter:
             if with_loss:
-                loss, output = infer_fn(inputs, targets)
+                loss, outputs = self.validation_steps(inputs, targets)
             else:
-                output = infer_fn(inputs)
+                outputs = self.validation_steps(inputs, targets)
 
             with torch.no_grad():
                 if torch.distributed.is_initialized():
@@ -189,6 +225,7 @@ class TorchTrainer:
                 else:
                     if with_loss:
                         reduced_loss = loss.detach()
+            print("Validation loss: ", reduced_loss)
         torch.cuda.synchronize()
         return reduced_loss
 
@@ -197,4 +234,4 @@ class TorchTrainer:
             self.train_mode()
             reduced_loss = self.train_epoch(train_loader)
             self.eval_mode()
-            reduced_loss = self.validate_epoch(self.forward_fn, val_loader)
+            reduced_loss = self.validate_epoch(val_loader)
