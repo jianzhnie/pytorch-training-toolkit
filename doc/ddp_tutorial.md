@@ -5,15 +5,12 @@
 
 - [PyTorch 分布式概述](https://pytorch.org/tutorials/beginner/dist_overview.html)
 - [DistributedDataParallel API 文档](https://pytorch.org/docs/master/generated/torch.nn.parallel.DistributedDataParallel.html)
-- [DistributedDataParallel 笔记](https://pytorch.org/docs/master/notes/ddp.html)
 
 [分布式数据并行 (DDP)](https://pytorch.org/docs/stable/nn.html#module-torch.nn.parallel) 是 PyTorch 中一个强大的模块，允许你在多个机器上并行化你的模型，非常适合大规模深度学习应用。要使用 DDP，你需要生成多个进程并在每个进程中创建一个 DDP 实例。
 
 但它是如何工作的呢？DDP 使用来自 [torch.distributed](https://pytorch.org/tutorials/intermediate/dist_tuto.html) 包的集体通信来同步梯度和缓冲区。这意味着每个进程都会有模型的一个副本，但它们会一起工作，就像模型在单个机器上一样进行训练。
 
 为了实现这一点，DDP 为模型中的每个参数注册了一个 autograd 钩子。当运行反向传播时，这个钩子会触发并在所有进程之间同步梯度。这确保每个进程都有相同的梯度，然后用于更新模型。
-
-有关 DDP 工作原理和如何有效使用它的更多信息，请务必查看 [DDP 设计笔记](https://pytorch.org/docs/master/notes/ddp.html)。使用 DDP，你可以比以往更快、更高效地训练你的模型！
 
 使用 DDP 的推荐方式是为每个模型副本生成一个进程。模型副本可以跨多个设备。DDP 进程可以放在同一台机器上或跨机器。请注意，GPU 设备不能在 DDP 进程之间共享（即一个 GPU 对应一个 DDP 进程）。
 
@@ -111,7 +108,7 @@ def run_demo(demo_fn, world_size):
 
 在 DDP 中，构造函数、前向传播和反向传播是分布式同步点。不同的进程预计会启动相同数量的同步，并以相同的顺序到达这些同步点，并且大致同时进入每个同步点。否则，较快的进程可能会提前到达并在等待掉队者时超时。因此，用户负责平衡跨进程的工作负载分布。有时，由于网络延迟、资源争用或不可预测的工作负载峰值等原因，处理速度不均衡是不可避免的。为了避免在这些情况下超时，请确保在调用 [init_process_group](https://pytorch.org/docs/stable/distributed.html#torch.distributed.init_process_group) 时传递一个足够大的 ``timeout`` 值。
 
-## 保存和加载检查点
+## 保存和加载 `checkppoint`
 
 在训练期间使用 ``torch.save`` 和 ``torch.load`` 检查点模块并从中恢复是很常见的。有关更多详细信息，请参阅 [保存和加载模型](https://pytorch.org/tutorials/beginner/saving_loading_models.html)。在使用 DDP 时，一个优化是在一个进程中保存模型，然后在所有进程中加载它，以减少写入开销。这之所以有效，是因为所有进程都从相同的参数开始，并且在反向传播中同步梯度，因此优化器应该保持将参数设置为相同的值。如果你使用这种优化（即在一个进程中保存但在所有进程中恢复），请确保在保存完成之前没有进程开始加载。此外，在加载模块时，你需要提供一个适当的 ``map_location`` 参数，以防止进程进入其他设备。如果缺少 ``map_location``，``torch.load`` 会首先将模块加载到 CPU，然后将每个参数复制到保存它的地方，这会导致同一台机器上的所有进程使用相同的一组设备。有关更高级的故障恢复和弹性支持，请参阅 [TorchElastic](https://pytorch.org/elastic)。
 
