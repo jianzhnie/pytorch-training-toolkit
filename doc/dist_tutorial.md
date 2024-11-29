@@ -6,7 +6,7 @@
 
 PyTorch中包含的分布式包（即`torch.distributed`）使研究人员和实践者能够轻松地将计算并行化到进程和机器集群中。为此，它利用消息传递语义，允许每个进程将数据传递给任何其他进程。与多进程（`torch.multiprocessing`）包不同，进程可以使用不同的通信后端，并且不限于在同一台机器上执行。
 
-为了开始，我们需要能够同时运行多个进程。如果你有权访问计算集群，你应该咨询本地系统管理员或使用你喜欢的协调工具（例如，[pdsh](https://linux.die.net/man/1/pdsh)，[clustershell](https://cea-hpc.github.io/clustershell/)，或[slurm](https://slurm.schedmd.com/)。出于本教程的目的，我们将使用单台机器并生成多个进程，使用以下模板。
+为了开始，我们需要能够同时运行多个进程。如果你有权访问计算集群，你应该咨询本地系统管理员或使用你喜欢的协调工具（例如，[pdsh](https://linux.die.net/man/1/pdsh)，[clustershell](https://cea-hpc.github.io/clustershell/)，或 [slurm](https://slurm.schedmd.com/)。出于本教程的目的，我们将使用单台机器并生成多个进程，使用以下模板。
 
 ```python
 """run.py:"""
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
 ![Send and Recv](https://pytorch.org/tutorials/_images/send_recv.png)
 
-从一个进程到另一个进程的数据传输称为点对点通信。这些通过`send`和`recv`函数或它们的*立即*对应物`isend`和`irecv`实现。
+从一个进程到另一个进程的数据传输称为点对点通信。这些通过`send`和`recv`函数或它们的*立即*对应部分`isend`和`irecv`实现。
 
 ```python
 """阻塞点对点通信。"""
@@ -97,7 +97,7 @@ def run(rank, size):
 
 点对点通信在我们想要更精细地控制进程之间的通信时非常有用。它们可以用于实现花哨的算法，例如[Baidu的DeepSpeech](https://github.com/baidu-research/baidu-allreduce) 或[Facebook的大规模实验](https://research.fb.com/publications/imagenet1kin1h/)。参见[第4.1节](https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce)
 
-## 集体通信
+## 集合通信
 
 | ![Scatter](https://pytorch.org/tutorials/_images/scatter.png) | ![Gather](https://pytorch.org/tutorials/_images/gather.png) |
 | ------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -116,12 +116,12 @@ def run(rank, size):
 | Broadcast                                                         | All-Gather                                                          |
 
 
-与点对点通信相反，集体通信允许在**组**中的所有进程之间进行通信模式。组是我们所有进程的一个子集。要创建一个组，我们可以传递一个秩列表给`dist.new_group(group)`。默认情况下，集体在所有进程上执行，也称为**world**。例如，为了获得所有进程上张量的总和，我们可以使用`dist.all_reduce(tensor, op, group)`集体。
+与点对点通信相反，集合通信允许在**组**中的所有进程之间进行通信。组是我们所有进程的一个子集。要创建一个组，我们可以传递一个秩列表给`dist.new_group(group)`。默认情况下，在所有进程上执行通信。例如，为了获得所有进程上张量的总和，我们可以使用`dist.all_reduce(tensor, op, group)` 通信模块。
 
 ```python
 """ All-Reduce 示例。"""
 def run(rank, size):
-    """ 简单的集体通信。 """
+    """ 简单的集合通信。 """
     group = dist.new_group([0, 1])
     tensor = torch.ones(1)
     dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=group)
@@ -141,7 +141,7 @@ def run(rank, size):
 
 支持的操作符的完整列表可以在 [这里](https://pytorch.org/docs/stable/distributed.html#torch.distributed.ReduceOp)找到。
 
-除了`dist.all_reduce(tensor, op, group)`之外，PyTorch中还实现了许多其他集体。以下是一些支持的集体。
+除了`dist.all_reduce(tensor, op, group)`之外，PyTorch中还实现了许多其他集合。以下是一些支持的集合。
 
 - `dist.broadcast(tensor, src, group)`：将`tensor`从`src`复制到所有其他进程。
 - `dist.reduce(tensor, dst, op, group)`：将`op`应用于每个`tensor`，并将结果存储在`dst`中。
@@ -152,16 +152,16 @@ def run(rank, size):
 - `dist.barrier(group)`：阻塞组中的所有进程，直到每个进程都进入此函数。
 - `dist.all_to_all(output_tensor_list, input_tensor_list, group)`：将输入张量列表分散到组中的所有进程，并返回收集的输出张量列表。
 
-支持的集体的完整列表可以通过查看PyTorch分布式的最新文档[(链接)](https://pytorch.org/docs/stable/distributed.html)找到。
+支持的集合的完整列表可以通过查看PyTorch分布式的最新文档[(链接)](https://pytorch.org/docs/stable/distributed.html)找到。
 
 ## 分布式训练
 
 现在我们已经了解了分布式模块的工作原理，让我们用它来写一些有用的东西。我们的目标将是复制 [DistributedDataParallel](https://pytorch.org/docs/stable/nn.html#torch.nn.parallel.DistributedDataParallel)的功能。当然，这将是一个教学示例，在实际情况中，你应该使用上面链接的官方、经过测试和优化的版本。
 
-非常简单，我们想要实现一个分布式版本的随机梯度下降。我们的脚本将让所有进程计算其模型在其数据批次上的梯度，然后平均它们的梯度。为了确保在更改进程数量时类似的收敛结果，我们首先必须对我们的数据集进行分区。（你也可以使用[torch.utils.data.random_split](https://pytorch.org/docs/stable/data.html#torch.utils.data.random_split)，而不是下面的代码片段。）
+非常简单，我们想要实现一个分布式版本的随机梯度下降。我们的脚本将让所有进程计算其模型在其数据批次上的梯度，然后平均它们的梯度。为了确保在更改进程数量时类似的收敛结果，我们首先必须对我们的数据集进行划分。（你也可以使用[torch.utils.data.random_split](https://pytorch.org/docs/stable/data.html#torch.utils.data.random_split)，而不是下面的代码片段。）
 
 ```python
-""" 数据集分区助手 """
+""" 数据集划分助手 """
 class Partition(object):
 
     def __init__(self, data, index):
@@ -195,10 +195,10 @@ class DataPartitioner(object):
         return Partition(self.data, self.partitions[partition])
 ```
 
-通过上面的代码片段，我们现在可以使用以下几行简单地对任何数据集进行分区：
+通过上面的代码片段，我们现在可以使用以下几行简单地对任何数据集进行划分：
 
 ```python
-""" 分区MNIST """
+""" 划分MNIST """
 def partition_dataset():
     dataset = datasets.MNIST('./data', train=True, download=True,
                              transform=transforms.Compose([
@@ -244,7 +244,7 @@ def run(rank, size):
               epoch, ': ', epoch_loss / num_batches)
 ```
 
-剩下要实现的是`average_gradients(model)`函数，它简单地获取一个模型并在整个世界中平均其梯度。
+剩下要实现的是`average_gradients(model)`函数，它简单地获取一个模型并在整个 world 平均其梯度。
 
 ```python
 """ 梯度平均。 """
@@ -261,7 +261,7 @@ def average_gradients(model):
 
 ### 我们自己的Ring-Allreduce
 
-作为一个额外的挑战，想象一下我们想要实现DeepSpeech的高效环形 allreduce。这可以通过使用点对点集体来实现。
+作为一个额外的挑战，想象一下我们想要实现DeepSpeech的高效 ring allreduce。这可以通过使用点对点集合来实现。
 
 ```python
 """ 使用加法的环形reduce实现。 """
@@ -301,11 +301,11 @@ def allreduce(send, recv):
 
 ### 通信后端
 
-`torch.distributed`最优雅的方面之一是它能够抽象并构建在不同的后端之上。如前所述，PyTorch中实现了多个后端。一些最流行的后端是Gloo，NCCL和MPI。它们各有不同的规范和权衡，取决于所需的用例。支持的功能的比较表可以在这里找到[(链接)](https://pytorch.org/docs/stable/distributed.html#module-torch.distributed)。
+`torch.distributed`最优雅的方面之一是它能够抽象并构建在不同的后端之上。如前所述，PyTorch中实现了多个后端。一些最流行的后端是Gloo，NCCL和 MPI。它们各有不同的规范和权衡，取决于所需的用例。支持的功能的比较表可以在这里找到[(链接)](https://pytorch.org/docs/stable/distributed.html#module-torch.distributed)。
 
 **Gloo后端**
 
-到目前为止，我们已经广泛使用了[Gloo后端](https://github.com/facebookincubator/gloo)。它非常方便作为开发平台，因为它包含在预编译的PyTorch二进制文件中，并且适用于Linux（自0.2版本起）和macOS（自1.3版本起）。它支持CPU上的所有点对点和集体操作，以及GPU上的所有集体操作。GPU张量的集体操作的实现没有NCCL后端提供的优化。
+到目前为止，我们已经广泛使用了[Gloo后端](https://github.com/facebookincubator/gloo)。它非常方便作为开发平台，因为它包含在预编译的PyTorch二进制文件中，并且适用于Linux（自0.2版本起）和macOS（自1.3版本起）。它支持CPU上的所有点对点和集合操作，以及GPU上的所有集合操作。GPU张量的集合操作的实现没有NCCL后端提供的优化。
 
 正如你肯定注意到的，如果将`model`放在GPU上，我们的分布式SGD示例将无法工作。为了使用多个GPU，让我们也进行以下修改：
 
@@ -317,7 +317,7 @@ def allreduce(send, recv):
 
 **MPI后端**
 
-消息传递接口（MPI）是高性能计算领域中标准化的工具。它允许进行点对点和集体通信，并且是`torch.distributed`API的主要灵感来源。有几个MPI实现（例如[Open-MPI](https://www.open-mpi.org/)，[MVAPICH2](http://mvapich.cse.ohio-state.edu/)，[Intel MPI](https://software.intel.com/en-us/intel-mpi-library)），每个都针对不同的目的进行了优化。使用MPI后端的优势在于MPI的广泛可用性——以及在大型计算机集群上的高度优化。[一些](https://developer.nvidia.com/mvapich) [最近的](https://developer.nvidia.com/ibm-spectrum-mpi) [实现](https://www.open-mpi.org/) 还能够利用CUDA IPC和GPU Direct技术，以避免通过CPU进行内存复制。
+消息传递接口（MPI）是高性能计算领域中标准化的工具。它允许进行点对点和集合通信，并且是`torch.distributed`API的主要灵感来源。有几个MPI实现（例如[Open-MPI](https://www.open-mpi.org/)，[MVAPICH2](http://mvapich.cse.ohio-state.edu/)，[Intel MPI](https://software.intel.com/en-us/intel-mpi-library)），每个都针对不同的目的进行了优化。使用MPI后端的优势在于MPI的广泛可用性——以及在大型计算机集群上的高度优化。[一些](https://developer.nvidia.com/mvapich) [最近的](https://developer.nvidia.com/ibm-spectrum-mpi) [实现](https://www.open-mpi.org/) 还能够利用CUDA IPC和GPU Direct技术，以避免通过CPU进行内存复制。
 
 不幸的是，PyTorch的二进制文件不能包含MPI实现，我们必须手动重新编译它。幸运的是，这个过程相当简单，因为PyTorch在编译时会*自动*查找可用的MPI实现。以下步骤通过从源代码安装PyTorch来安装MPI后端。
 
@@ -334,7 +334,7 @@ def allreduce(send, recv):
 
 **NCCL后端**
 
-[NCCL后端](https://github.com/nvidia/nccl) 提供了针对CUDA张量的集体操作的优化实现。如果你只对集体操作使用CUDA张量，请考虑使用此后端以获得最佳的性能。NCCL后端包含在支持CUDA的预构建二进制文件中。
+[NCCL后端](https://github.com/nvidia/nccl) 提供了针对CUDA张量的集合操作的优化实现。如果你只对集合操作使用CUDA张量，请考虑使用此后端以获得最佳的性能。NCCL后端包含在支持CUDA的预构建二进制文件中。
 
 ### 初始化方法
 
@@ -344,11 +344,11 @@ def allreduce(send, recv):
 
 **环境变量**
 
-我们一直在使用环境变量初始化方法。通过在所有机器上设置以下四个环境变量，所有进程将能够正确连接到主进程，获取有关其他进程的信息，并最终与它们握手。
+我们一直在使用环境变量初始化方法。通过在所有机器上设置以下四个环境变量，所有进程将能够正确连接到主进程，获取有关其他进程的信息。
 
 - `MASTER_PORT`：主进程所在机器上的一个空闲端口。
 - `MASTER_ADDR`：主进程所在机器的IP地址。
-- `WORLD_SIZE`：总进程数，以便主进程知道要等待多少个工作进程。
+- `WORLD_SIZE`： 总进程数，以便主进程知道要等待多少个工作进程。
 - `RANK`：每个进程的秩，以便它们知道它是否是主进程或工作进程。
 
 ### 共享文件系统
