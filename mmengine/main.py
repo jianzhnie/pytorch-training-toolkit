@@ -4,10 +4,9 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
+from autotrain.trainer import TorchTrainer
 from torch.optim import lr_scheduler
 from torchvision import datasets, models, transforms
-
-from autotrain.trainer import TorchTrainer
 
 
 def main():

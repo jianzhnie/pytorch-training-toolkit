@@ -1,39 +1,37 @@
 import os
-import sys
 import tempfile
-from typing import Callable, Optional
+from typing import Callable
 
 import torch
 import torch.distributed as dist
+import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
-import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 class ToyModel(nn.Module):
-    """
-    A simple toy neural network model for demonstration of distributed training.
+    """A simple toy neural network model for demonstration of distributed
+    training.
 
     The model consists of two linear layers with a ReLU activation in between.
-    
+
     Attributes:
         net1 (nn.Linear): First linear layer with 10 input and 10 output features
         relu (nn.ReLU): ReLU activation function
         net2 (nn.Linear): Second linear layer with 10 input and 5 output features
     """
+
     def __init__(self) -> None:
-        """
-        Initialize the ToyModel with two linear layers and ReLU activation.
-        """
+        """Initialize the ToyModel with two linear layers and ReLU
+        activation."""
         super(ToyModel, self).__init__()
         self.net1 = nn.Linear(10, 10)
         self.relu = nn.ReLU()
         self.net2 = nn.Linear(10, 5)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the model.
+        """Forward pass of the model.
 
         Args:
             x (torch.Tensor): Input tensor of shape (batch_size, 10)
@@ -45,8 +43,7 @@ class ToyModel(nn.Module):
 
 
 def setup(rank: int, world_size: int) -> None:
-    """
-    Set up the distributed environment for training.
+    """Set up the distributed environment for training.
 
     Args:
         rank (int): Rank of the current process
@@ -57,25 +54,22 @@ def setup(rank: int, world_size: int) -> None:
     os.environ['MASTER_PORT'] = '12355'
 
     # Initialize the process group using NCCL backend
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    dist.init_process_group('nccl', rank=rank, world_size=world_size)
 
 
 def cleanup() -> None:
-    """
-    Clean up the distributed environment by destroying the process group.
-    """
+    """Clean up the distributed environment by destroying the process group."""
     dist.destroy_process_group()
 
 
 def demo_basic(rank: int, world_size: int) -> None:
-    """
-    Demonstrate basic Distributed Data Parallel (DDP) training.
+    """Demonstrate basic Distributed Data Parallel (DDP) training.
 
     Args:
         rank (int): Rank of the current process
         world_size (int): Total number of processes
     """
-    print(f"Running basic DDP example on rank {rank}.")
+    print(f'Running basic DDP example on rank {rank}.')
     setup(rank, world_size)
 
     # Create model and move it to GPU with id rank
@@ -96,51 +90,49 @@ def demo_basic(rank: int, world_size: int) -> None:
     optimizer.step()
 
     cleanup()
-    print(f"Finished running basic DDP example on rank {rank}.")
+    print(f'Finished running basic DDP example on rank {rank}.')
 
 
 def run_demo(demo_fn: Callable, world_size: int) -> None:
-    """
-    Run a distributed demo function across multiple processes.
+    """Run a distributed demo function across multiple processes.
 
     Args:
         demo_fn (Callable): The demo function to run
         world_size (int): Total number of processes to spawn
     """
-    mp.spawn(demo_fn,
-             args=(world_size,),
-             nprocs=world_size,
-             join=True)
+    mp.spawn(demo_fn, args=(world_size, ), nprocs=world_size, join=True)
 
 
 def demo_checkpoint(rank: int, world_size: int) -> None:
-    """
-    Demonstrate Distributed Data Parallel (DDP) training with model checkpointing.
+    """Demonstrate Distributed Data Parallel (DDP) training with model
+    checkpointing.
 
     Args:
         rank (int): Rank of the current process
         world_size (int): Total number of processes
     """
-    print(f"Running DDP checkpoint example on rank {rank}.")
+    print(f'Running DDP checkpoint example on rank {rank}.')
     setup(rank, world_size)
 
     model = ToyModel().to(rank)
     ddp_model = DDP(model, device_ids=[rank])
 
     # Create a temporary checkpoint path
-    CHECKPOINT_PATH = os.path.join(tempfile.gettempdir(), "model.checkpoint")
-    
+    CHECKPOINT_PATH = os.path.join(tempfile.gettempdir(), 'model.checkpoint')
+
     # Save checkpoint from rank 0 process
     if rank == 0:
         torch.save(ddp_model.state_dict(), CHECKPOINT_PATH)
 
     # Synchronize processes before loading
     dist.barrier()
-    
+
     # Load checkpoint with proper device mapping
     map_location = {'cuda:%d' % 0: f'cuda:{rank}'}
     ddp_model.load_state_dict(
-        torch.load(CHECKPOINT_PATH, map_location=map_location, weights_only=True))
+        torch.load(CHECKPOINT_PATH,
+                   map_location=map_location,
+                   weights_only=True))
 
     # Perform a training step
     loss_fn = nn.MSELoss()
@@ -159,12 +151,11 @@ def demo_checkpoint(rank: int, world_size: int) -> None:
         os.remove(CHECKPOINT_PATH)
 
     cleanup()
-    print(f"Finished running DDP checkpoint example on rank {rank}.")
+    print(f'Finished running DDP checkpoint example on rank {rank}.')
 
 
 class ToyMpModel(nn.Module):
-    """
-    A toy model demonstrating model parallelism across two devices.
+    """A toy model demonstrating model parallelism across two devices.
 
     Attributes:
         dev0 (int): First device for the first layer
@@ -173,9 +164,9 @@ class ToyMpModel(nn.Module):
         relu (nn.ReLU): ReLU activation function
         net2 (nn.Linear): Second linear layer on dev1
     """
+
     def __init__(self, dev0: int, dev1: int) -> None:
-        """
-        Initialize the model with two devices.
+        """Initialize the model with two devices.
 
         Args:
             dev0 (int): First device ID
@@ -189,8 +180,7 @@ class ToyMpModel(nn.Module):
         self.net2 = torch.nn.Linear(10, 5).to(dev1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass with model parallelism.
+        """Forward pass with model parallelism.
 
         Args:
             x (torch.Tensor): Input tensor
@@ -205,14 +195,13 @@ class ToyMpModel(nn.Module):
 
 
 def demo_model_parallel(rank: int, world_size: int) -> None:
-    """
-    Demonstrate Distributed Data Parallel (DDP) with model parallelism.
+    """Demonstrate Distributed Data Parallel (DDP) with model parallelism.
 
     Args:
         rank (int): Rank of the current process
         world_size (int): Total number of processes
     """
-    print(f"Running DDP with model parallel example on rank {rank}.")
+    print(f'Running DDP with model parallel example on rank {rank}.')
     setup(rank, world_size)
 
     # Setup mp_model and devices for this process
@@ -232,17 +221,17 @@ def demo_model_parallel(rank: int, world_size: int) -> None:
     optimizer.step()
 
     cleanup()
-    print(f"Finished running DDP with model parallel example on rank {rank}.")
+    print(f'Finished running DDP with model parallel example on rank {rank}.')
 
 
 def main() -> None:
-    """
-    Main function to run distributed training demonstrations.
+    """Main function to run distributed training demonstrations.
+
     Checks GPU availability and runs different distributed training scenarios.
     """
     # Check GPU availability
     n_gpus = torch.cuda.device_count()
-    assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
+    assert n_gpus >= 2, f'Requires at least 2 GPUs to run, but got {n_gpus}'
 
     # Run basic DDP example
     world_size = n_gpus
@@ -256,5 +245,5 @@ def main() -> None:
     run_demo(demo_model_parallel, world_size)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
