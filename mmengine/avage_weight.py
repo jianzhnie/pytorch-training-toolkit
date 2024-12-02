@@ -8,7 +8,7 @@ def avg_weights(
     modela: nn.Module,
     modelb: nn.Module,
     beta: float = 0.5,
-    save_path: str = "model.pth",
+    save_path: str = 'model.pth',
 ) -> None:
     modela_param = modela.named_parameters()
     modelb_param = modelb.named_parameters()
@@ -16,9 +16,8 @@ def avg_weights(
 
     for name, param_a in modela_param:
         if name in dict_params:
-            dict_params[name].data.copy_(
-                beta * param_a.data + (1 - beta) * dict_params[name].data
-            )
+            dict_params[name].data.copy_(beta * param_a.data +
+                                         (1 - beta) * dict_params[name].data)
 
     modela.load_state_dict(dict_params)
     torch.save(modela.state_dict(), save_path)
@@ -29,7 +28,7 @@ def average_models(
     modela: nn.Module,
     modelb: nn.Module,
     beta: float = 0.5,
-    save_path: str = "model.pth",
+    save_path: str = 'model.pth',
 ) -> None:
     """Average the weights of two PyTorch models.
 
@@ -54,9 +53,8 @@ def average_models(
 
     new_model_state = new_model.state_dict()
     # Loop through all the parameters in modela and modelb
-    for (name_a, param_a), (name_b, param_b) in zip(
-        modela.named_parameters(), modelb.named_parameters()
-    ):
+    for (name_a, param_a), (name_b, param_b) in zip(modela.named_parameters(),
+                                                    modelb.named_parameters()):
         assert name_a == name_b
         # Compute the weighted average using beta and 1-beta
         new_param = beta * param_a + (1 - beta) * param_b
@@ -68,7 +66,7 @@ def average_models(
     return new_model
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     modela = nn.Transformer()
     params = modela.parameters()
     modelb = nn.Transformer()

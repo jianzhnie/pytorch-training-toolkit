@@ -1,7 +1,6 @@
 # PyTorch 分布式概述
 
-
-这是 ``torch.distributed`` 包的概述页面。本页的目的是将文档分类到不同的主题，并简要描述每个主题。如果你是第一次使用 PyTorch 构建分布式训练应用程序，建议使用此文档导航到最适合你用例的技术。
+这是 `torch.distributed` 包的概述页面。本页的目的是将文档分类到不同的主题，并简要描述每个主题。如果你是第一次使用 PyTorch 构建分布式训练应用程序，建议使用此文档导航到最适合你用例的技术。
 
 ## 介绍
 
@@ -15,7 +14,6 @@ PyTorch 分布式库包括一组并行模块、通信层以及用于启动和调
 - [全分片数据并行训练 (FSDP)](https://pytorch.org/docs/stable/fsdp.html)
 - [张量并行 (TP)](https://pytorch.org/docs/stable/distributed.tensor.parallel.html)
 - [流水线并行 (PP)](https://pytorch.org/docs/main/distributed.pipelining.html)
-
 
 ## 通信 API
 

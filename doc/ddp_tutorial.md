@@ -1,6 +1,5 @@
 # 分布式数据并行入门
 
-
 ## 先决条件
 
 - [PyTorch 分布式概述](https://pytorch.org/tutorials/beginner/dist_overview.html)
@@ -18,12 +17,12 @@
 
 **注意**: 本教程中的代码在一个 8-GPU 服务器上运行，但可以轻松推广到其他环境。
 
-## ``DataParallel`` 和 ``DistributedDataParallel`` 的比较
+## `DataParallel` 和 `DistributedDataParallel` 的比较
 
-在我们深入之前，让我们澄清一下为什么你会考虑使用 ``DistributedDataParallel`` 而不是 ``DataParallel``，尽管它的复杂性增加了：
+在我们深入之前，让我们澄清一下为什么你会考虑使用 `DistributedDataParallel` 而不是 `DataParallel`，尽管它的复杂性增加了：
 
-- 首先，``DataParallel`` 是单进程、多线程的，但它只能在单个机器上工作。相比之下，``DistributedDataParallel`` 是多进程的，支持单机和多机训练。由于线程间的 GIL 争用、每次迭代的复制模型以及分散输入和收集输出的额外开销，``DataParallel`` 通常比 ``DistributedDataParallel`` 更慢，即使在单个机器上也是如此。
-- 回顾 [之前的教程](https://pytorch.org/tutorials/intermediate/model_parallel_tutorial.html)，如果你的模型太大而无法放入单个 GPU，你必须使用**模型并行**将其拆分到多个 GPU 上。``DistributedDataParallel`` 与**模型并行**一起工作，而 ``DataParallel`` 目前不支持。当 DDP 与模型并行结合时，每个 DDP 进程将使用模型并行，所有进程共同使用数据并行。
+- 首先，`DataParallel` 是单进程、多线程的，但它只能在单个机器上工作。相比之下，`DistributedDataParallel` 是多进程的，支持单机和多机训练。由于线程间的 GIL 争用、每次迭代的复制模型以及分散输入和收集输出的额外开销，`DataParallel` 通常比 `DistributedDataParallel` 更慢，即使在单个机器上也是如此。
+- 回顾 [之前的教程](https://pytorch.org/tutorials/intermediate/model_parallel_tutorial.html)，如果你的模型太大而无法放入单个 GPU，你必须使用**模型并行**将其拆分到多个 GPU 上。`DistributedDataParallel` 与**模型并行**一起工作，而 `DataParallel` 目前不支持。当 DDP 与模型并行结合时，每个 DDP 进程将使用模型并行，所有进程共同使用数据并行。
 
 ## 基本用例
 
@@ -102,15 +101,15 @@ def run_demo(demo_fn, world_size):
              join=True)
 ```
 
-正如你所见，DDP 包装了较低级别的分布式通信细节，并提供了一个干净的 API，就像它是一个本地模型一样。梯度同步通信在反向传播期间进行，并与反向计算重叠。当 ``backward()`` 返回时，``param.grad`` 已经包含了同步的梯度张量。对于基本用例，DDP 只需要几行额外的代码来设置进程组。当将 DDP 应用于更高级的用例时，一些注意事项需要谨慎。
+正如你所见，DDP 包装了较低级别的分布式通信细节，并提供了一个干净的 API，就像它是一个本地模型一样。梯度同步通信在反向传播期间进行，并与反向计算重叠。当 `backward()` 返回时，`param.grad` 已经包含了同步的梯度张量。对于基本用例，DDP 只需要几行额外的代码来设置进程组。当将 DDP 应用于更高级的用例时，一些注意事项需要谨慎。
 
 ## 处理速度不均衡
 
-在 DDP 中，构造函数、前向传播和反向传播是分布式同步点。不同的进程预计会启动相同数量的同步，并以相同的顺序到达这些同步点，并且大致同时进入每个同步点。否则，较快的进程可能会提前到达并在等待掉队者时超时。因此，用户负责平衡跨进程的工作负载分布。有时，由于网络延迟、资源争用或不可预测的工作负载峰值等原因，处理速度不均衡是不可避免的。为了避免在这些情况下超时，请确保在调用 [init_process_group](https://pytorch.org/docs/stable/distributed.html#torch.distributed.init_process_group) 时传递一个足够大的 ``timeout`` 值。
+在 DDP 中，构造函数、前向传播和反向传播是分布式同步点。不同的进程预计会启动相同数量的同步，并以相同的顺序到达这些同步点，并且大致同时进入每个同步点。否则，较快的进程可能会提前到达并在等待掉队者时超时。因此，用户负责平衡跨进程的工作负载分布。有时，由于网络延迟、资源争用或不可预测的工作负载峰值等原因，处理速度不均衡是不可避免的。为了避免在这些情况下超时，请确保在调用 [init_process_group](https://pytorch.org/docs/stable/distributed.html#torch.distributed.init_process_group) 时传递一个足够大的 `timeout` 值。
 
 ## 保存和加载 `checkppoint`
 
-在训练期间使用 ``torch.save`` 和 ``torch.load`` 检查点模块并从中恢复是很常见的。有关更多详细信息，请参阅 [保存和加载模型](https://pytorch.org/tutorials/beginner/saving_loading_models.html)。在使用 DDP 时，一个优化是在一个进程中保存模型，然后在所有进程中加载它，以减少写入开销。这之所以有效，是因为所有进程都从相同的参数开始，并且在反向传播中同步梯度，因此优化器应该保持将参数设置为相同的值。如果你使用这种优化（即在一个进程中保存但在所有进程中恢复），请确保在保存完成之前没有进程开始加载。此外，在加载模块时，你需要提供一个适当的 ``map_location`` 参数，以防止进程进入其他设备。如果缺少 ``map_location``，``torch.load`` 会首先将模块加载到 CPU，然后将每个参数复制到保存它的地方，这会导致同一台机器上的所有进程使用相同的一组设备。有关更高级的故障恢复和弹性支持，请参阅 [TorchElastic](https://pytorch.org/elastic)。
+在训练期间使用 `torch.save` 和 `torch.load` 检查点模块并从中恢复是很常见的。有关更多详细信息，请参阅 [保存和加载模型](https://pytorch.org/tutorials/beginner/saving_loading_models.html)。在使用 DDP 时，一个优化是在一个进程中保存模型，然后在所有进程中加载它，以减少写入开销。这之所以有效，是因为所有进程都从相同的参数开始，并且在反向传播中同步梯度，因此优化器应该保持将参数设置为相同的值。如果你使用这种优化（即在一个进程中保存但在所有进程中恢复），请确保在保存完成之前没有进程开始加载。此外，在加载模块时，你需要提供一个适当的 `map_location` 参数，以防止进程进入其他设备。如果缺少 `map_location`，`torch.load` 会首先将模块加载到 CPU，然后将每个参数复制到保存它的地方，这会导致同一台机器上的所有进程使用相同的一组设备。有关更高级的故障恢复和弹性支持，请参阅 [TorchElastic](https://pytorch.org/elastic)。
 
 ```python
 def demo_checkpoint(rank, world_size):
@@ -174,7 +173,7 @@ class ToyMpModel(nn.Module):
         return self.net2(x)
 ```
 
-当将多 GPU 模型传递给 DDP 时，``device_ids`` 和 ``output_device`` 必须**不**设置。输入和输出数据将由应用程序或模型 ``forward()`` 方法放置在适当的设备上。
+当将多 GPU 模型传递给 DDP 时，`device_ids` 和 `output_device` 必须**不**设置。输入和输出数据将由应用程序或模型 `forward()` 方法放置在适当的设备上。
 
 ```python
 def demo_model_parallel(rank, world_size):
@@ -212,7 +211,7 @@ if __name__ == "__main__":
 
 ## 使用 torch.distributed.run/torchrun 初始化 DDP
 
-我们可以利用 PyTorch Elastic 来简化 DDP 代码并更轻松地初始化作业。让我们仍然使用 Toymodel 示例并创建一个名为 ``elastic_ddp.py`` 的文件。
+我们可以利用 PyTorch Elastic 来简化 DDP 代码并更轻松地初始化作业。让我们仍然使用 Toymodel 示例并创建一个名为 `elastic_ddp.py` 的文件。
 
 ```python
 import torch
@@ -262,18 +261,18 @@ if __name__ == "__main__":
 torchrun --nnodes=2 --nproc_per_node=8 --rdzv_id=100 --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:29400 elastic_ddp.py
 ```
 
-在上面的示例中，我们在两台主机上运行 DDP 脚本，每台主机上运行 8 个进程。也就是说，我们在 16 个 GPU 上运行这个作业。请注意，``$MASTER_ADDR`` 必须在所有节点上相同。
+在上面的示例中，我们在两台主机上运行 DDP 脚本，每台主机上运行 8 个进程。也就是说，我们在 16 个 GPU 上运行这个作业。请注意，`$MASTER_ADDR` 必须在所有节点上相同。
 
-这里 ``torchrun`` 将在启动它的节点上生成 8 个进程，并在每个进程上调用 ``elastic_ddp.py``，但用户还需要应用集群管理工具（如 slurm）在 2 个节点上实际运行此命令。
+这里 `torchrun` 将在启动它的节点上生成 8 个进程，并在每个进程上调用 `elastic_ddp.py`，但用户还需要应用集群管理工具（如 slurm）在 2 个节点上实际运行此命令。
 
-例如，在启用了 SLURM 的集群上，我们可以编写一个脚本来运行上面的命令并设置 ``MASTER_ADDR`` 为：
+例如，在启用了 SLURM 的集群上，我们可以编写一个脚本来运行上面的命令并设置 `MASTER_ADDR` 为：
 
 ```bash
 export MASTER_ADDR=$(scontrol show hostname ${SLURM_NODELIST} | head -n 1)
 ```
 
-然后我们可以使用 SLURM 命令 ``srun --nodes=2 ./torchrun_script.sh`` 运行这个脚本。
+然后我们可以使用 SLURM 命令 `srun --nodes=2 ./torchrun_script.sh` 运行这个脚本。
 
-这只是一个示例；你可以选择自己的集群调度工具来启动 ``torchrun`` 作业。
+这只是一个示例；你可以选择自己的集群调度工具来启动 `torchrun` 作业。
 
 有关 Elastic run 的更多信息，请参阅 [快速入门文档](https://pytorch.org/docs/stable/elastic/quickstart.html)。
