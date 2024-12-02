@@ -25,6 +25,16 @@
 - 首先，``DataParallel`` 是单进程、多线程的，但它只能在单个机器上工作。相比之下，``DistributedDataParallel`` 是多进程的，支持单机和多机训练。由于线程间的 GIL 争用、每次迭代的复制模型以及分散输入和收集输出的额外开销，``DataParallel`` 通常比 ``DistributedDataParallel`` 更慢，即使在单个机器上也是如此。
 - 回顾 [之前的教程](https://pytorch.org/tutorials/intermediate/model_parallel_tutorial.html)，如果你的模型太大而无法放入单个 GPU，你必须使用**模型并行**将其拆分到多个 GPU 上。``DistributedDataParallel`` 与**模型并行**一起工作，而 ``DataParallel`` 目前不支持。当 DDP 与模型并行结合时，每个 DDP 进程将使用模型并行，所有进程共同使用数据并行。
 
+### 使用 DDP 而不是 DataParallel (DP)
+
+DataParallel 是一种较旧的数据并行方法。DP 非常简单（只需一行额外的代码），但它的性能要差得多。DDP 在架构上进行了一些改进：
+
+| 特性         | DataParallel                                              | DistributedDataParallel      |
+| ------------ | --------------------------------------------------------- | ---------------------------- |
+| 开销         | 更多开销；模型在每次前向传播时都会被复制和销毁            | 模型只复制一次               |
+| 支持的并行性 | 仅支持单节点并行                                          | 支持扩展到多台机器           |
+| 速度         | 较慢；使用单进程中的多线程，并且会遇到全局解释器锁（GIL） | 更快（没有 GIL），使用多进程 |
+
 ## 基本用例
 
 要创建一个 DDP 模块，你必须首先正确设置进程组。更多细节可以在 [使用 PyTorch 编写分布式应用程序](https://pytorch.org/tutorials/intermediate/dist_tuto.html) 中找到。
