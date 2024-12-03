@@ -26,8 +26,7 @@ class DistributedTrainer:
     def __init__(
         self,
         args: argparse.Namespace,
-        local_rank: int,
-        global_rank: int,
+        rank: int,
         world_size: int,
         model: nn.Module,
         train_loader: DataLoader,
@@ -39,8 +38,7 @@ class DistributedTrainer:
 
         Args:
             args (argparse.Namespace): Command-line arguments
-            local_rank (int): Local rank of the current process
-            global_rank (int): Global rank of the current process
+            rank (int): Local rank of the current process
             world_size (int): Total number of distributed processes
             model (nn.Module): Neural network model
             train_loader (DataLoader): Training data loader
@@ -49,18 +47,17 @@ class DistributedTrainer:
             scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler
         """
         self.args = args
-        self.local_rank = local_rank
-        self.global_rank = global_rank
+        self.rank = rank
         self.world_size = world_size
 
         # Setup device
-        self.device = torch.device(f'cuda:{local_rank}')
+        self.device = torch.device(f'cuda:{rank}')
 
         # Wrap model with DistributedDataParallel
         self.model = model.to(self.device)
         self.model = DDP(self.model,
-                         device_ids=[local_rank],
-                         output_device=local_rank)
+                         device_ids=[rank],
+                         output_device=rank)
 
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -68,7 +65,7 @@ class DistributedTrainer:
         self.scheduler = scheduler
 
         # Configure logging for primary process
-        if self.global_rank == 0:
+        if self.rank == 0:
             logging.basicConfig(level=logging.INFO, format='%(message)s')
             self.logger = logging.getLogger(__name__)
         else:
@@ -124,7 +121,7 @@ class DistributedTrainer:
             total_loss += batch_loss
 
             # Log progress at specified intervals
-            if self.global_rank == 0 and batch_idx % self.args.log_interval == 0:
+            if self.rank == 0 and batch_idx % self.args.log_interval == 0:
                 self.logger.info(
                     f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(self.train_loader.dataset)} '
                     f'({100.0 * batch_idx / len(self.train_loader):.0f}%)]\tLoss: {batch_loss:.6f}'
@@ -166,7 +163,7 @@ class DistributedTrainer:
         correct = metrics[1].item()
         accuracy = 100.0 * correct / len(self.test_loader.dataset)
 
-        if self.global_rank == 0:
+        if self.rank == 0:
             self.logger.info(
                 f'\nTest set: Average loss: {test_loss:.4f}, '
                 f'Accuracy: {correct}/{len(self.test_loader.dataset)} ({accuracy:.0f}%)\n'
@@ -181,7 +178,7 @@ class DistributedTrainer:
             epoch_loss = self.run_epoch(epoch)
 
             # Log epoch loss on primary process (optional)
-            if self.global_rank == 0:
+            if self.rank == 0:
                 self.logger.info(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
 
             # Synchronize all processes
@@ -189,7 +186,7 @@ class DistributedTrainer:
 
             # Perform testing on primary process
             test_metrics = self.test()
-            if self.global_rank == 0:
+            if self.rank == 0:
                 self.logger.info(
                     f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
@@ -197,7 +194,7 @@ class DistributedTrainer:
             self.scheduler.step()
 
         # Optional: Save trained model on primary process
-        if self.global_rank == 0 and self.args.save_model:
+        if self.rank == 0 and self.args.save_model:
             self.save_checkpoint(self.args.epochs)
 
     def save_checkpoint(self,
@@ -212,7 +209,7 @@ class DistributedTrainer:
         Returns:
             Optional[str]: Path where checkpoint was saved
         """
-        if self.global_rank != 0:
+        if self.rank != 0:
             return None
 
         # Use provided path or generate default
@@ -336,8 +333,7 @@ def train_process(args: argparse.Namespace) -> None:
         # Create distributed trainer
         trainer = DistributedTrainer(
             args=args,
-            local_rank=rank,
-            global_rank=rank,
+            rank=rank,
             world_size=world_size,
             model=model,
             train_loader=train_loader,
