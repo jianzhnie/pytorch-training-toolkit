@@ -21,4 +21,4 @@ optimizer_config:
 
 hydra:
   run:
-    dir: ./
+    dir: ./work_dir/mingpt
