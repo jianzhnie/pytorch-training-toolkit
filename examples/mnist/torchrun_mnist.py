@@ -66,15 +66,15 @@ class DistributedTrainer:
         if self.rank == 0:
             logging.basicConfig(
                 level=logging.INFO,
-                format="%(asctime)s | %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
+                format='%(asctime)s | %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
             )
             self.logger = logging.getLogger(__name__)
         else:
             logging.basicConfig(
                 level=logging.WARNING,
-                format="%(asctime)s | %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
+                format='%(asctime)s | %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
             )
             self.logger = logging.getLogger(__name__)
             self.logger.disabled = True
@@ -225,10 +225,10 @@ class DistributedTrainer:
         # Save comprehensive checkpoint
         torch.save(
             {
-                "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": self.scheduler.state_dict(),
+                'epoch': epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'scheduler_state_dict': self.scheduler.state_dict(),
             },
             checkpoint_path,
         )
@@ -428,8 +428,8 @@ def main() -> None:
         return
 
     # Provide guidance on how to run the distributed script
-    print("To run this script in a distributed manner, use:")
-    print("torchrun --nproc_per_node=<num_gpus> script_name.py")
+    print('To run this script in a distributed manner, use:')
+    print('torchrun --nproc_per_node=<num_gpus> script_name.py')
     # Launch distributed training processes
     train_process(args)
 
