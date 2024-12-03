@@ -14,7 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import datasets, transforms
-
+from scaletorch.utils.get_sys_info import system_diagnostic
 
 class DistributedTrainer:
     """A distributed trainer class for PyTorch model training using
@@ -237,11 +237,25 @@ def setup(rank: int, world_size: int) -> None:
         rank (int): Global rank of the current process
         world_size (int): Total number of processes
     """
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    print(f"Setting up process {rank}/{world_size}")
+    print(f"MASTER_ADDR: {os.getenv('MASTER_ADDR')}")
+    print(f"MASTER_PORT: {os.getenv('MASTER_PORT')}")
 
+    os.environ['MASTER_ADDR'] = os.getenv('MASTER_ADDR', 'localhost')
+    os.environ['MASTER_PORT'] = os.getenv('MASTER_PORT', '12355')
+    
     # Initialize the distributed environment
-    dist.init_process_group('nccl', rank=rank, world_size=world_size)
+    try:
+        dist.init_process_group(
+            backend='nccl',
+            init_method='env://',
+            world_size=world_size,
+            rank=rank
+        )
+        print(f"Process {rank} initialized successfully")
+    except Exception as e:
+        print(f"Initialization error in process {rank}: {e}")
+        raise
 
 
 def cleanup() -> None:
@@ -314,37 +328,44 @@ def train_process(local_rank: int, args: argparse.Namespace,
         args (argparse.Namespace): Command-line arguments
         world_size (int): Total number of processes
     """
-    # Setup distributed environment
-    setup(local_rank, world_size)
+    try:
+        torch.cuda.set_device(local_rank)
 
-    # Prepare data loaders
-    train_loader, test_loader = prepare_data(args, local_rank, world_size)
+        # Setup distributed environment
+        setup(local_rank, world_size)
 
-    # Initialize model
-    model = Net()
+        # Prepare data loaders
+        train_loader, test_loader = prepare_data(args, local_rank, world_size)
 
-    # Setup optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+        # Initialize model
+        model = Net()
 
-    # Create distributed trainer
-    trainer = DistributedTrainer(
-        args=args,
-        local_rank=local_rank,
-        global_rank=local_rank,
-        world_size=world_size,
-        model=model,
-        train_loader=train_loader,
-        test_loader=test_loader,
-        optimizer=optimizer,
-        scheduler=scheduler,
-    )
+        # Setup optimizer and scheduler
+        optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+        scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
-    # Start training
-    trainer.train()
+        # Create distributed trainer
+        trainer = DistributedTrainer(
+            args=args,
+            local_rank=local_rank,
+            global_rank=local_rank,
+            world_size=world_size,
+            model=model,
+            train_loader=train_loader,
+            test_loader=test_loader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+        )
 
-    # Cleanup distributed environment
-    cleanup()
+        # Start training
+        trainer.train()
+
+    except Exception as e:
+            print(f"Process {local_rank} failed: {e}")
+            raise
+    finally:
+        # 确保清理分布式环境
+        cleanup()
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -382,7 +403,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--seed', type=int, default=1, help='Random seed')
     parser.add_argument('--log-interval',
                         type=int,
-                        default=10,
+                        default=100,
                         help='Logging frequency')
     parser.add_argument('--save-model',
                         action='store_true',
@@ -398,7 +419,11 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> None:
     """Main function to launch distributed training."""
     # Parse arguments
+    # 在脚本开始处调用
+    system_diagnostic()
+
     args = parse_arguments()
+    torch.backends.cudnn.benchmark = True
 
     # Set random seed
     torch.manual_seed(args.seed)
