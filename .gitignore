@@ -163,3 +163,4 @@ vision_data
 *.pt
 *log
 data/
+*.tar
