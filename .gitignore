@@ -162,3 +162,4 @@ vision_data
 .hydra
 *.pt
 *log
+data/

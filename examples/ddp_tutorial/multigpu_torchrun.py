@@ -3,6 +3,7 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
+
 # Import your custom dataset
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -29,9 +30,9 @@ class MyTrainDataset(Dataset):
         """
         self.size = size
         # Generate random input tensors (20 dimensions) and target tensors (1 dimension)
-        self.data: List[Tuple[torch.Tensor,
-                              torch.Tensor]] = [(torch.rand(20), torch.rand(1))
-                                                for _ in range(size)]
+        self.data: List[Tuple[torch.Tensor, torch.Tensor]] = [
+            (torch.rand(20), torch.rand(1)) for _ in range(size)
+        ]
 
     def __len__(self) -> int:
         """Return the total number of data points in the dataset.
@@ -66,13 +67,13 @@ def ddp_setup() -> None:
     """
     try:
         # Set the current device for the process
-        local_rank = int(os.environ.get('LOCAL_RANK', 0))
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
         torch.cuda.set_device(local_rank)
 
         # Initialize the process group
-        init_process_group(backend='nccl')
+        init_process_group(backend="nccl")
     except Exception as e:
-        print(f'Error setting up distributed environment: {e}')
+        print(f"Error setting up distributed environment: {e}")
         raise
 
 
@@ -101,7 +102,7 @@ class Trainer:
             snapshot_path (str): Path to save/load training snapshots.
         """
         # Determine GPU device
-        self.gpu_id = int(os.environ.get('LOCAL_RANK', 0))
+        self.gpu_id = int(os.environ.get("LOCAL_RANK", 0))
 
         # Move model to the specific GPU
         self.model = model.to(self.gpu_id)
@@ -116,7 +117,7 @@ class Trainer:
 
         # Load snapshot if exists
         if os.path.exists(snapshot_path):
-            print('Loading snapshot')
+            print("Loading snapshot")
             self._load_snapshot(snapshot_path)
 
         # Wrap model with DistributedDataParallel
@@ -134,24 +135,23 @@ class Trainer:
         """
         try:
             # Determine device location
-            loc = f'cuda:{self.gpu_id}'
+            loc = f"cuda:{self.gpu_id}"
 
             # Load snapshot
             snapshot = torch.load(snapshot_path, map_location=loc)
 
             # Restore model state
-            self.model.load_state_dict(snapshot['MODEL_STATE'])
+            self.model.load_state_dict(snapshot["MODEL_STATE"])
 
             # Restore epoch count
-            self.epochs_run = snapshot['EPOCHS_RUN']
+            self.epochs_run = snapshot["EPOCHS_RUN"]
 
-            print(
-                f'Resuming training from snapshot at Epoch {self.epochs_run}')
+            print(f"Resuming training from snapshot at Epoch {self.epochs_run}")
         except FileNotFoundError:
-            print(f'Snapshot file not found: {snapshot_path}')
+            print(f"Snapshot file not found: {snapshot_path}")
             raise
         except Exception as e:
-            print(f'Error loading snapshot: {e}')
+            print(f"Error loading snapshot: {e}")
             raise
 
     def _run_batch(self, source: torch.Tensor, targets: torch.Tensor) -> float:
@@ -190,7 +190,7 @@ class Trainer:
 
         # Print epoch information
         print(
-            f'[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}'
+            f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}"
         )
 
         # Set epoch for distributed sampler to ensure proper shuffling
@@ -214,18 +214,16 @@ class Trainer:
         try:
             # Create snapshot dictionary
             snapshot = {
-                'MODEL_STATE': self.model.module.state_dict(),
-                'EPOCHS_RUN': epoch,
+                "MODEL_STATE": self.model.module.state_dict(),
+                "EPOCHS_RUN": epoch,
             }
 
             # Save snapshot
             torch.save(snapshot, self.snapshot_path)
 
-            print(
-                f'Epoch {epoch} | Training snapshot saved at {self.snapshot_path}'
-            )
+            print(f"Epoch {epoch} | Training snapshot saved at {self.snapshot_path}")
         except Exception as e:
-            print(f'Error saving snapshot: {e}')
+            print(f"Error saving snapshot: {e}")
 
     def train(self, max_epochs: int) -> None:
         """Main training loop.
@@ -242,8 +240,7 @@ class Trainer:
                 self._save_snapshot(epoch)
 
 
-def load_train_objs(
-) -> Tuple[Dataset, torch.nn.Module, torch.optim.Optimizer]:
+def load_train_objs() -> Tuple[Dataset, torch.nn.Module, torch.optim.Optimizer]:
     """Load training objects including dataset, model, and optimizer.
 
     Returns:
@@ -284,7 +281,7 @@ def main(
     save_every: int,
     total_epochs: int,
     batch_size: int,
-    snapshot_path: str = 'snapshot.pt',
+    snapshot_path: str = "snapshot.pt",
 ) -> None:
     """Main training execution function for distributed training.
 
@@ -305,34 +302,31 @@ def main(
         train_data = prepare_dataloader(dataset, batch_size)
 
         # Create trainer and start training
-        trainer = Trainer(model, train_data, optimizer, save_every,
-                          snapshot_path)
+        trainer = Trainer(model, train_data, optimizer, save_every, snapshot_path)
         trainer.train(total_epochs)
     except Exception as e:
-        print(f'Training failed: {e}')
+        print(f"Training failed: {e}")
     finally:
         # Cleanup distributed environment
         destroy_process_group()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
 
     # Setup argument parser
-    parser = argparse.ArgumentParser(description='Distributed Training Job')
-    parser.add_argument('--total_epochs',
-                        type=int,
-                        default=2,
-                        help='Total epochs to train the model')
-    parser.add_argument('--save_every',
-                        type=int,
-                        default=1000,
-                        help='How often to save a snapshot')
+    parser = argparse.ArgumentParser(description="Distributed Training Job")
     parser.add_argument(
-        '--batch_size',
+        "--total_epochs", type=int, default=2, help="Total epochs to train the model"
+    )
+    parser.add_argument(
+        "--save_every", type=int, default=1000, help="How often to save a snapshot"
+    )
+    parser.add_argument(
+        "--batch_size",
         default=32,
         type=int,
-        help='Input batch size on each device (default: 32)',
+        help="Input batch size on each device (default: 32)",
     )
 
     # Parse arguments
