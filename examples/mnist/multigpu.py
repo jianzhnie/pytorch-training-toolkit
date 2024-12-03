@@ -30,9 +30,9 @@ class MyTrainDataset(Dataset):
         """
         self.size = size
         # Generate random input tensors (20 dimensions) and target tensors (1 dimension)
-        self.data: List[Tuple[torch.Tensor, torch.Tensor]] = [
-            (torch.rand(20), torch.rand(1)) for _ in range(size)
-        ]
+        self.data: List[Tuple[torch.Tensor,
+                              torch.Tensor]] = [(torch.rand(20), torch.rand(1))
+                                                for _ in range(size)]
 
     def __len__(self) -> int:
         """Return the total number of data points in the dataset.
@@ -65,14 +65,14 @@ def ddp_setup(rank: int, world_size: int) -> None:
         world_size (int): Total number of processes.
     """
     # Set environment variables for process communication
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
 
     # Set the current device for the process
     torch.cuda.set_device(rank)
 
     # Initialize the process group
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    dist.init_process_group(backend='nccl', rank=rank, world_size=world_size)
 
 
 class Trainer:
@@ -146,7 +146,7 @@ class Trainer:
 
         # Print epoch information
         print(
-            f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}"
+            f'[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}'
         )
 
         # Set epoch for distributed sampler to ensure proper shuffling
@@ -171,19 +171,21 @@ class Trainer:
         # Only save checkpoint from the primary process
         if self.gpu_id == 0:
             # Use provided path or create default path
-            checkpoint_path = path or f"checkpoint_epoch_{epoch}.pt"
+            checkpoint_path = path or f'checkpoint_epoch_{epoch}.pt'
 
             # Save model state dictionary
             torch.save(
                 {
-                    "epoch": epoch,
-                    "model_state_dict": self.model.module.state_dict(),
-                    "optimizer_state_dict": self.optimizer.state_dict(),
+                    'epoch': epoch,
+                    'model_state_dict': self.model.module.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
                 },
                 checkpoint_path,
             )
 
-            print(f"Epoch {epoch} | Training checkpoint saved at {checkpoint_path}")
+            print(
+                f'Epoch {epoch} | Training checkpoint saved at {checkpoint_path}'
+            )
 
     def train(self, max_epochs: int) -> None:
         """Main training loop.
@@ -200,7 +202,8 @@ class Trainer:
                 self._save_checkpoint(epoch)
 
 
-def load_train_objs() -> Tuple[Dataset, torch.nn.Module, torch.optim.Optimizer]:
+def load_train_objs(
+) -> Tuple[Dataset, torch.nn.Module, torch.optim.Optimizer]:
     """Load training objects including dataset, model, and optimizer.
 
     Returns:
@@ -237,9 +240,8 @@ def prepare_dataloader(dataset: Dataset, batch_size: int) -> DataLoader:
     )
 
 
-def main(
-    rank: int, world_size: int, save_every: int, total_epochs: int, batch_size: int
-) -> None:
+def main(rank: int, world_size: int, save_every: int, total_epochs: int,
+         batch_size: int) -> None:
     """Main training execution function for distributed training.
 
     Args:
@@ -266,22 +268,24 @@ def main(
     dist.destroy_process_group()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import argparse
 
     # Setup argument parser
-    parser = argparse.ArgumentParser(description="Distributed Training Job")
+    parser = argparse.ArgumentParser(description='Distributed Training Job')
+    parser.add_argument('--total_epochs',
+                        type=int,
+                        default=2,
+                        help='Total epochs to train the model')
+    parser.add_argument('--save_every',
+                        type=int,
+                        default=1000,
+                        help='How often to save a snapshot')
     parser.add_argument(
-        "--total_epochs", type=int, default=2, help="Total epochs to train the model"
-    )
-    parser.add_argument(
-        "--save_every", type=int, default=1000, help="How often to save a snapshot"
-    )
-    parser.add_argument(
-        "--batch_size",
+        '--batch_size',
         default=32,
         type=int,
-        help="Input batch size on each device (default: 32)",
+        help='Input batch size on each device (default: 32)',
     )
 
     # Parse arguments

@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Tuple
 
 import hydra
@@ -6,11 +7,10 @@ import torch
 from omegaconf import DictConfig
 from torch.distributed import destroy_process_group, init_process_group
 from torch.utils.data import Dataset, random_split
-import sys
 
 sys.path.append(os.getcwd())
-from mingpt.model import GPT, GPTConfig, OptimizerConfig, create_optimizer
 from mingpt.char_dataset import CharDataset, DataConfig
+from mingpt.model import GPT, GPTConfig, OptimizerConfig, create_optimizer
 from mingpt.trainer import Trainer, TrainerConfig
 
 
@@ -26,17 +26,16 @@ def ddp_setup() -> None:
     """
     try:
         # Initialize distributed process group
-        init_process_group(backend="nccl")
+        init_process_group(backend='nccl')
 
         # Set CUDA device based on local rank
-        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+        torch.cuda.set_device(int(os.environ['LOCAL_RANK']))
     except KeyError:
         raise RuntimeError(
-            "Distributed environment not set up. "
-            "Ensure you're using torchrun or torch.distributed.launch"
-        )
+            'Distributed environment not set up. '
+            "Ensure you're using torchrun or torch.distributed.launch")
     except Exception as e:
-        raise RuntimeError(f"Error setting up distributed environment: {e}")
+        raise RuntimeError(f'Error setting up distributed environment: {e}')
 
 
 def get_train_objs(
@@ -61,7 +60,8 @@ def get_train_objs(
 
     # Split dataset into training and testing
     train_len = int(len(dataset) * data_cfg.train_split)
-    train_set, test_set = random_split(dataset, [train_len, len(dataset) - train_len])
+    train_set, test_set = random_split(
+        dataset, [train_len, len(dataset) - train_len])
 
     # Update model configuration based on dataset
     gpt_cfg.vocab_size = dataset.vocab_size
@@ -74,7 +74,7 @@ def get_train_objs(
     return model, optimizer, train_set, test_set
 
 
-@hydra.main(version_base=None, config_path=".", config_name="gpt2_train_cfg")
+@hydra.main(version_base=None, config_path='.', config_name='gpt2_train_cfg')
 def main(cfg: DictConfig) -> None:
     """Main training script for distributed GPT training.
 
@@ -93,22 +93,21 @@ def main(cfg: DictConfig) -> None:
         ddp_setup()
 
         # Extract configurations from Hydra config
-        gpt_cfg = GPTConfig(**cfg["gpt_config"])
-        opt_cfg = OptimizerConfig(**cfg["optimizer_config"])
-        data_cfg = DataConfig(**cfg["data_config"])
-        trainer_cfg = TrainerConfig(**cfg["trainer_config"])
+        gpt_cfg = GPTConfig(**cfg['gpt_config'])
+        opt_cfg = OptimizerConfig(**cfg['optimizer_config'])
+        data_cfg = DataConfig(**cfg['data_config'])
+        trainer_cfg = TrainerConfig(**cfg['trainer_config'])
 
         # Prepare training objects
         model, optimizer, train_data, test_data = get_train_objs(
-            gpt_cfg, opt_cfg, data_cfg
-        )
+            gpt_cfg, opt_cfg, data_cfg)
 
         # Initialize and run trainer
         trainer = Trainer(trainer_cfg, model, optimizer, train_data, test_data)
         trainer.train()
 
     except Exception as e:
-        print(f"Training failed with error: {e}")
+        print(f'Training failed with error: {e}')
         raise
     finally:
         # Ensure process group is destroyed
@@ -124,5 +123,5 @@ def cli_entry() -> None:
     main()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     cli_entry()

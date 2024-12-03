@@ -7,12 +7,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torch.optim import SGD
-from torchvision import datasets, transforms
-
 from mmengine.evaluator import BaseMetric
 from mmengine.model import BaseModel
 from mmengine.runner import Runner
+from torch.optim import SGD
+from torchvision import datasets, transforms
 
 
 class MMResNet50(BaseModel):
