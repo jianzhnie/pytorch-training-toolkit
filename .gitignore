@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 vision_data
 .hydra
+*.pt
