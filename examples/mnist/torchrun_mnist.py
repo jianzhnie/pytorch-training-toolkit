@@ -336,6 +336,8 @@ def train_process(args: argparse.Namespace) -> None:
         # Create distributed trainer
         trainer = DistributedTrainer(
             args=args,
+            local_rank=rank,
+            global_rank=rank,
             world_size=world_size,
             model=model,
             train_loader=train_loader,
@@ -422,6 +424,9 @@ def main() -> None:
         print('Requires multiple GPUs for distributed training.')
         return
 
+    # Provide guidance on how to run the distributed script
+    print("To run this script in a distributed manner, use:")
+    print("torchrun --nproc_per_node=<num_gpus> script_name.py")
     # Launch distributed training processes
     train_process(args)
 
