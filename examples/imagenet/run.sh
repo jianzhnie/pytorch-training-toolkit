@@ -8,4 +8,4 @@ python examples/imagenet/dist_train.py -a resnet18 --dummy \
     --multiprocessing-distributed \
     --batch-size 32 \
     --world-size 1 \
-    --rank 0 
+    --rank 0
