@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import sys
 from typing import Dict, Optional
 
 import torch
@@ -14,7 +15,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import datasets, transforms
+
+sys.path.append(os.getcwd())
 from scaletorch.utils.get_sys_info import system_diagnostic
+
 
 class DistributedTrainer:
     """A distributed trainer class for PyTorch model training using
@@ -179,7 +183,7 @@ class DistributedTrainer:
 
             # Log epoch loss on primary process (optional)
             if self.global_rank == 0:
-                self.logger.info(f"Epoch {epoch} Loss: {epoch_loss:.4f}")
+                self.logger.info(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
 
             # Synchronize all processes
             dist.barrier()
@@ -187,7 +191,8 @@ class DistributedTrainer:
             # Perform testing on primary process
             test_metrics = self.test()
             if self.global_rank == 0:
-                self.logger.info(f"Epoch {epoch}, Eval Metrics: {test_metrics}")
+                self.logger.info(
+                    f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
             # Step learning rate scheduler
             self.scheduler.step()
@@ -237,24 +242,22 @@ def setup(rank: int, world_size: int) -> None:
         rank (int): Global rank of the current process
         world_size (int): Total number of processes
     """
-    print(f"Setting up process {rank}/{world_size}")
+    print(f'Setting up process {rank}/{world_size}')
     print(f"MASTER_ADDR: {os.getenv('MASTER_ADDR')}")
     print(f"MASTER_PORT: {os.getenv('MASTER_PORT')}")
 
     os.environ['MASTER_ADDR'] = os.getenv('MASTER_ADDR', 'localhost')
     os.environ['MASTER_PORT'] = os.getenv('MASTER_PORT', '12355')
-    
+
     # Initialize the distributed environment
     try:
-        dist.init_process_group(
-            backend='nccl',
-            init_method='env://',
-            world_size=world_size,
-            rank=rank
-        )
-        print(f"Process {rank} initialized successfully")
+        dist.init_process_group(backend='nccl',
+                                init_method='env://',
+                                world_size=world_size,
+                                rank=rank)
+        print(f'Process {rank} initialized successfully')
     except Exception as e:
-        print(f"Initialization error in process {rank}: {e}")
+        print(f'Initialization error in process {rank}: {e}')
         raise
 
 
@@ -361,8 +364,8 @@ def train_process(local_rank: int, args: argparse.Namespace,
         trainer.train()
 
     except Exception as e:
-            print(f"Process {local_rank} failed: {e}")
-            raise
+        print(f'Process {local_rank} failed: {e}')
+        raise
     finally:
         # 确保清理分布式环境
         cleanup()

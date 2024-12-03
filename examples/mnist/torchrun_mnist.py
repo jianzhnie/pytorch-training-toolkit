@@ -1,11 +1,11 @@
 import argparse
 import logging
 import os
+import sys
 from typing import Dict, Optional
 
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -14,10 +14,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import datasets, transforms
-import os
-import sys
+
 sys.path.append(os.getcwd())
 from scaletorch.utils.get_sys_info import system_diagnostic
+
 
 class DistributedTrainer:
     """A distributed trainer class for PyTorch model training using
@@ -182,7 +182,7 @@ class DistributedTrainer:
 
             # Log epoch loss on primary process (optional)
             if self.global_rank == 0:
-                self.logger.info(f"Epoch {epoch} Loss: {epoch_loss:.4f}")
+                self.logger.info(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
 
             # Synchronize all processes
             dist.barrier()
@@ -190,7 +190,8 @@ class DistributedTrainer:
             # Perform testing on primary process
             test_metrics = self.test()
             if self.global_rank == 0:
-                self.logger.info(f"Epoch {epoch}, Eval Metrics: {test_metrics}")
+                self.logger.info(
+                    f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
             # Step learning rate scheduler
             self.scheduler.step()
@@ -240,19 +241,17 @@ def ddp_setup() -> None:
         rank (int): Global rank of the current process
         world_size (int): Total number of processes
     """
-    
+
     # Initialize the distributed environment
     try:
         # Set the current device for the process
-        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        local_rank = int(os.environ.get('LOCAL_RANK', 0))
         torch.cuda.set_device(local_rank)
 
-        dist.init_process_group(
-            backend='nccl'
-        )
-        print(f"Process {local_rank} initialized successfully")
+        dist.init_process_group(backend='nccl')
+        print(f'Process {local_rank} initialized successfully')
     except Exception as e:
-        print(f"Initialization error in process {local_rank}: {e}")
+        print(f'Initialization error in process {local_rank}: {e}')
         raise
 
 
@@ -286,10 +285,8 @@ def prepare_data(args: argparse.Namespace) -> tuple:
                                   transform=transform)
 
     # Create distributed samplers
-    train_sampler = DistributedSampler(train_dataset,
-                                       shuffle=True)
-    test_sampler = DistributedSampler(test_dataset,
-                                      shuffle=False)
+    train_sampler = DistributedSampler(train_dataset, shuffle=True)
+    test_sampler = DistributedSampler(test_dataset, shuffle=False)
 
     # Create data loaders
     train_loader = torch.utils.data.DataLoader(
@@ -351,8 +348,8 @@ def train_process(args: argparse.Namespace) -> None:
         trainer.train()
 
     except Exception as e:
-            print(f"Process {rank} failed: {e}")
-            raise
+        print(f'Process {rank} failed: {e}')
+        raise
     finally:
         # 确保清理分布式环境
         cleanup()
@@ -427,6 +424,7 @@ def main() -> None:
 
     # Launch distributed training processes
     train_process(args)
+
 
 if __name__ == '__main__':
     main()

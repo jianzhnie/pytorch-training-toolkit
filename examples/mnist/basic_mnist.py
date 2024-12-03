@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from lenet import Net  # Assuming this is a local import of the neural network model
+from lenet import Net
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
@@ -44,7 +44,7 @@ class Trainer:
             device (Optional[torch.device], optional): Training device. Defaults to None.
         """
         self.args = args
-        self.device = device or torch.device("cpu")
+        self.device = device or torch.device('cpu')
         self.model = model.to(self.device)
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -52,7 +52,7 @@ class Trainer:
         self.scheduler = scheduler
 
         # Configure logging
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
         self.logger = logging.getLogger(__name__)
 
     def run_batch(self, source: torch.Tensor, targets: torch.Tensor) -> float:
@@ -103,14 +103,13 @@ class Trainer:
             # Log progress at specified intervals
             if batch_idx % self.args.log_interval == 0:
                 self.logger.info(
-                    "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+                    'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch,
                         batch_idx * len(data),
                         len(self.train_loader.dataset),
                         100.0 * batch_idx / len(self.train_loader),
                         batch_loss,
-                    )
-                )
+                    ))
 
                 # Stop after first batch if dry run
                 if self.args.dry_run:
@@ -134,7 +133,7 @@ class Trainer:
                 output = self.model(data)
 
                 # Accumulate test loss
-                test_loss += F.nll_loss(output, target, reduction="sum").item()
+                test_loss += F.nll_loss(output, target, reduction='sum').item()
 
                 # Count correct predictions
                 pred = output.argmax(dim=1, keepdim=True)
@@ -145,12 +144,11 @@ class Trainer:
         accuracy = 100.0 * correct / len(self.test_loader.dataset)
 
         self.logger.info(
-            "\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
-                test_loss, correct, len(self.test_loader.dataset), accuracy
-            )
-        )
+            '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.
+            format(test_loss, correct, len(self.test_loader.dataset),
+                   accuracy))
 
-        return {"loss": test_loss, "accuracy": accuracy}
+        return {'loss': test_loss, 'accuracy': accuracy}
 
     def train(self) -> None:
         """Execute complete model training process.
@@ -162,13 +160,13 @@ class Trainer:
             epoch_loss = self.run_epoch(epoch)
 
             # Log epoch loss on primary process (optional)
-            self.logger.info(f"Epoch {epoch}, Train Loss: {epoch_loss:.4f}")
+            self.logger.info(f'Epoch {epoch}, Train Loss: {epoch_loss:.4f}')
 
             # Perform testing
             test_metrics = self.test()
 
             # Log epoch loss on primary process (optional)
-            self.logger.info(f"Epoch {epoch}, Eval Metrics: {test_metrics}")
+            self.logger.info(f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
             # Step learning rate scheduler
             self.scheduler.step()
@@ -188,20 +186,21 @@ class Trainer:
             str: Path where checkpoint was saved
         """
         # Use provided path or generate default
-        checkpoint_path = path or f"checkpoint_epoch_{epoch}.pt"
+        checkpoint_path = path or f'checkpoint_epoch_{epoch}.pt'
 
         # Save comprehensive checkpoint
         torch.save(
             {
-                "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": self.scheduler.state_dict(),
+                'epoch': epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'scheduler_state_dict': self.scheduler.state_dict(),
             },
             checkpoint_path,
         )
 
-        self.logger.info(f"Epoch {epoch} | Checkpoint saved at {checkpoint_path}")
+        self.logger.info(
+            f'Epoch {epoch} | Checkpoint saved at {checkpoint_path}')
         return checkpoint_path
 
 
@@ -211,37 +210,51 @@ def parse_arguments() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed command-line arguments
     """
-    parser = argparse.ArgumentParser(description="PyTorch MNIST Training")
+    parser = argparse.ArgumentParser(description='PyTorch MNIST Training')
 
     # Training configuration arguments
-    parser.add_argument(
-        "--batch-size", type=int, default=64, help="Training batch size"
-    )
-    parser.add_argument(
-        "--test-batch-size", type=int, default=1000, help="Test batch size"
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=14, help="Number of training epochs"
-    )
-    parser.add_argument("--lr", type=float, default=1.0, help="Learning rate")
-    parser.add_argument("--gamma", type=float, default=0.7, help="Learning rate decay")
+    parser.add_argument('--batch-size',
+                        type=int,
+                        default=64,
+                        help='Training batch size')
+    parser.add_argument('--test-batch-size',
+                        type=int,
+                        default=1000,
+                        help='Test batch size')
+    parser.add_argument('--epochs',
+                        type=int,
+                        default=14,
+                        help='Number of training epochs')
+    parser.add_argument('--lr', type=float, default=1.0, help='Learning rate')
+    parser.add_argument('--gamma',
+                        type=float,
+                        default=0.7,
+                        help='Learning rate decay')
 
     # Device selection arguments
-    parser.add_argument("--no-cuda", action="store_true", help="Disable CUDA training")
-    parser.add_argument(
-        "--no-mps", action="store_true", help="Disable macOS GPU training"
-    )
+    parser.add_argument('--no-cuda',
+                        action='store_true',
+                        help='Disable CUDA training')
+    parser.add_argument('--no-mps',
+                        action='store_true',
+                        help='Disable macOS GPU training')
 
     # Utility arguments
-    parser.add_argument("--dry-run", action="store_true", help="Quick training check")
-    parser.add_argument("--seed", type=int, default=1, help="Random seed")
-    parser.add_argument(
-        "--log-interval", type=int, default=100, help="Logging frequency"
-    )
-    parser.add_argument("--save-model", action="store_true", help="Save trained model")
-    parser.add_argument(
-        "--data-path", type=str, default="./data", help="Dataset download path"
-    )
+    parser.add_argument('--dry-run',
+                        action='store_true',
+                        help='Quick training check')
+    parser.add_argument('--seed', type=int, default=1, help='Random seed')
+    parser.add_argument('--log-interval',
+                        type=int,
+                        default=100,
+                        help='Logging frequency')
+    parser.add_argument('--save-model',
+                        action='store_true',
+                        help='Save trained model')
+    parser.add_argument('--data-path',
+                        type=str,
+                        default='./data',
+                        help='Dataset download path')
 
     return parser.parse_args()
 
@@ -262,35 +275,32 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     # Select device
-    device = (
-        torch.device("cuda")
-        if use_cuda
-        else torch.device("mps")
-        if use_mps
-        else torch.device("cpu")
-    )
+    device = (torch.device('cuda') if use_cuda else
+              torch.device('mps') if use_mps else torch.device('cpu'))
 
     # Configure data loading
-    train_kwargs = {"batch_size": args.batch_size}
-    test_kwargs = {"batch_size": args.test_batch_size}
+    train_kwargs = {'batch_size': args.batch_size}
+    test_kwargs = {'batch_size': args.test_batch_size}
 
     if use_cuda:
-        cuda_kwargs = {"num_workers": 1, "pin_memory": True, "shuffle": True}
+        cuda_kwargs = {'num_workers': 1, 'pin_memory': True, 'shuffle': True}
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
     # Prepare data transformations
     transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    )
+        [transforms.ToTensor(),
+         transforms.Normalize((0.1307, ), (0.3081, ))])
 
     # Load MNIST datasets
-    train_dataset = datasets.MNIST(
-        root=args.data_path, train=True, download=True, transform=transform
-    )
-    test_dataset = datasets.MNIST(
-        root=args.data_path, train=False, download=True, transform=transform
-    )
+    train_dataset = datasets.MNIST(root=args.data_path,
+                                   train=True,
+                                   download=True,
+                                   transform=transform)
+    test_dataset = datasets.MNIST(root=args.data_path,
+                                  train=False,
+                                  download=True,
+                                  transform=transform)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, **train_kwargs)
     test_loader = torch.utils.data.DataLoader(test_dataset, **test_kwargs)
@@ -301,11 +311,10 @@ def main() -> None:
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     # Create trainer and start training
-    trainer = Trainer(
-        args, model, train_loader, test_loader, optimizer, scheduler, device
-    )
+    trainer = Trainer(args, model, train_loader, test_loader, optimizer,
+                      scheduler, device)
     trainer.train()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
