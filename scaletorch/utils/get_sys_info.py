@@ -1,6 +1,7 @@
 import platform
 import psutil
 import socket
+import torch
 
 
 def system_diagnostic():
