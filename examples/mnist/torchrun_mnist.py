@@ -55,9 +55,7 @@ class DistributedTrainer:
 
         # Wrap model with DistributedDataParallel
         self.model = model.to(self.device)
-        self.model = DDP(self.model,
-                         device_ids=[rank],
-                         output_device=rank)
+        self.model = DDP(self.model, device_ids=[rank], output_device=rank)
 
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -66,9 +64,18 @@ class DistributedTrainer:
 
         # Configure logging for primary process
         if self.rank == 0:
-            logging.basicConfig(level=logging.INFO, format='%(message)s')
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
             self.logger = logging.getLogger(__name__)
         else:
+            logging.basicConfig(
+                level=logging.WARNING,
+                format="%(asctime)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
             self.logger = logging.getLogger(__name__)
             self.logger.disabled = True
 
@@ -218,10 +225,10 @@ class DistributedTrainer:
         # Save comprehensive checkpoint
         torch.save(
             {
-                'epoch': epoch,
-                'model_state_dict': self.model.module.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict(),
+                "epoch": epoch,
+                "model_state_dict": self.model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "scheduler_state_dict": self.scheduler.state_dict(),
             },
             checkpoint_path,
         )
