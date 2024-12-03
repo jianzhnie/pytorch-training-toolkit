@@ -177,12 +177,17 @@ class DistributedTrainer:
             # Train for one epoch
             epoch_loss = self.run_epoch(epoch)
 
+            # Log epoch loss on primary process (optional)
+            if self.global_rank == 0:
+                self.logger.info(f"Epoch {epoch} Loss: {epoch_loss:.4f}")
+
             # Synchronize all processes
             dist.barrier()
 
             # Perform testing on primary process
+            test_metrics = self.test()
             if self.global_rank == 0:
-                test_metrics = self.test()
+                self.logger.info(f"Epoch {epoch}, Eval Metrics: {test_metrics}")
 
             # Step learning rate scheduler
             self.scheduler.step()
