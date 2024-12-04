@@ -26,8 +26,6 @@ class DistributedTrainer:
     def __init__(
         self,
         args: argparse.Namespace,
-        rank: int,
-        world_size: int,
         model: nn.Module,
         train_loader: DataLoader,
         test_loader: DataLoader,
@@ -47,15 +45,16 @@ class DistributedTrainer:
             scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler
         """
         self.args = args
-        self.rank = rank
-        self.world_size = world_size
-
+        self.rank = int(os.environ['RANK'])
+        self.local_rank = int(os.environ['LOCAL_RANK'])
         # Setup device
-        self.device = torch.device(f'cuda:{rank}')
+        self.device = torch.device(f'cuda:{self.local_rank}')
 
         # Wrap model with DistributedDataParallel
         self.model = model.to(self.device)
-        self.model = DDP(self.model, device_ids=[rank], output_device=rank)
+        self.model = DDP(self.model,
+                         device_ids=[self.local_rank],
+                         output_device=self.rank)
 
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -116,7 +115,8 @@ class DistributedTrainer:
         self.model.train()
 
         # Set epoch for distributed sampler
-        self.train_loader.sampler.set_epoch(epoch)
+        if hasattr(self.train_loader.sampler, 'set_epoch'):
+            self.train_loader.sampler.set_epoch(epoch)
 
         total_loss = 0.0
         for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -239,23 +239,12 @@ class DistributedTrainer:
 
 
 def ddp_setup() -> None:
-    """Initialize the distributed environment.
-
-    Args:
-        rank (int): Global rank of the current process
-        world_size (int): Total number of processes
-    """
-
-    # Initialize the distributed environment
+    """Initialize the distributed environment."""
     try:
-        # Set the current device for the process
-        local_rank = int(os.environ.get('LOCAL_RANK', 0))
-        torch.cuda.set_device(local_rank)
-
         dist.init_process_group(backend='nccl')
-        print(f'Process {local_rank} initialized successfully')
+        print('Dist Process initialized successfully')
     except Exception as e:
-        print(f'Initialization error in process {local_rank}: {e}')
+        print(f'Dist Process Initialize error {e}')
         raise
 
 
@@ -309,55 +298,6 @@ def prepare_data(args: argparse.Namespace) -> tuple:
     )
 
     return train_loader, test_loader
-
-
-def train_process(args: argparse.Namespace) -> None:
-    """Training process for each distributed process.
-
-    Args:
-        local_rank (int): Local GPU rank
-        args (argparse.Namespace): Command-line arguments
-        world_size (int): Total number of processes
-    """
-    try:
-        # Setup distributed environment
-        ddp_setup()
-
-        # Get the current process rank
-        rank = dist.get_rank()
-        world_size = dist.get_world_size()
-
-        # Prepare data loaders
-        train_loader, test_loader = prepare_data(args)
-
-        # Initialize model
-        model = Net()
-
-        # Setup optimizer and scheduler
-        optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-        scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
-
-        # Create distributed trainer
-        trainer = DistributedTrainer(
-            args=args,
-            rank=rank,
-            world_size=world_size,
-            model=model,
-            train_loader=train_loader,
-            test_loader=test_loader,
-            optimizer=optimizer,
-            scheduler=scheduler,
-        )
-
-        # Start training
-        trainer.train()
-
-    except Exception as e:
-        print(f'Process {rank} failed: {e}')
-        raise
-    finally:
-        # 确保清理分布式环境
-        cleanup()
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -431,7 +371,31 @@ def main() -> None:
     print('To run this script in a distributed manner, use:')
     print('torchrun --nproc_per_node=<num_gpus> script_name.py')
     # Launch distributed training processes
-    train_process(args)
+
+    # Setup distributed environment
+    ddp_setup()
+    # Prepare data loaders
+    train_loader, test_loader = prepare_data(args)
+
+    # Initialize model
+    model = Net()
+
+    # Setup optimizer and scheduler
+    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+
+    # Create distributed trainer
+    trainer = DistributedTrainer(
+        args=args,
+        model=model,
+        train_loader=train_loader,
+        test_loader=test_loader,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+    # Start training
+    trainer.train()
+    cleanup()
 
 
 if __name__ == '__main__':
