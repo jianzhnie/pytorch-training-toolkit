@@ -19,6 +19,36 @@ sys.path.append(os.getcwd())
 from scaletorch.utils.get_sys_info import system_diagnostic
 
 
+def ddp_setup() -> None:
+    """Set up the Distributed Data Parallel (DDP) environment.
+
+    This function:
+    - Initializes the process group using NCCL backend
+    - Sets the current CUDA device based on LOCAL_RANK
+
+    Raises:
+        RuntimeError: If distributed environment variables are not set
+    """
+    try:
+        # Initialize distributed process group
+        dist.init_process_group(backend="nccl")
+
+        # Set CUDA device based on local rank
+        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+    except KeyError:
+        raise RuntimeError(
+            "Distributed environment not set up. "
+            "Ensure you're using torchrun or torch.distributed.launch"
+        )
+    except Exception as e:
+        raise RuntimeError(f"Error setting up distributed environment: {e}")
+
+
+def cleanup() -> None:
+    """Clean up the distributed environment."""
+    dist.destroy_process_group()
+
+
 class DistributedTrainer:
     """A distributed trainer class for PyTorch model training using
     DistributedDataParallel."""
@@ -45,8 +75,11 @@ class DistributedTrainer:
             scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler
         """
         self.args = args
-        self.rank = int(os.environ['RANK'])
+        
+        # 获取当前进程的 rank
+        self.rank = dist.get_rank() if dist.is_initialized() else 0
         self.local_rank = int(os.environ['LOCAL_RANK'])
+
         # Setup device
         self.device = torch.device(f'cuda:{self.local_rank}')
 
@@ -70,11 +103,6 @@ class DistributedTrainer:
             )
             self.logger = logging.getLogger(__name__)
         else:
-            logging.basicConfig(
-                level=logging.WARNING,
-                format='%(asctime)s | %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S',
-            )
             self.logger = logging.getLogger(__name__)
             self.logger.disabled = True
 
@@ -238,21 +266,6 @@ class DistributedTrainer:
         return checkpoint_path
 
 
-def ddp_setup() -> None:
-    """Initialize the distributed environment."""
-    try:
-        dist.init_process_group(backend='nccl')
-        print('Dist Process initialized successfully')
-    except Exception as e:
-        print(f'Dist Process Initialize error {e}')
-        raise
-
-
-def cleanup() -> None:
-    """Clean up the distributed environment."""
-    dist.destroy_process_group()
-
-
 def prepare_data(args: argparse.Namespace) -> tuple:
     """Prepare distributed datasets and data loaders.
 
@@ -320,7 +333,7 @@ def parse_arguments() -> argparse.Namespace:
                         help='Test batch size')
     parser.add_argument('--epochs',
                         type=int,
-                        default=14,
+                        default=5,
                         help='Number of training epochs')
     parser.add_argument('--lr', type=float, default=1.0, help='Learning rate')
     parser.add_argument('--gamma',
