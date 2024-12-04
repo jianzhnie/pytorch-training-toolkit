@@ -286,3 +286,209 @@ export MASTER_ADDR=$(scontrol show hostname ${SLURM_NODELIST} | head -n 1)
 这只是一个示例；你可以选择自己的集群调度工具来启动 `torchrun` 作业。
 
 有关 Elastic run 的更多信息，请参阅 [快速入门文档](https://pytorch.org/docs/stable/elastic/quickstart.html)。
+
+
+
+## Multiprocessing-distributed  VS torchrun
+
+主要差异包括：
+
+1. 启动方式
+- Multiprocessing-distributed：需要手动编写多进程启动代码，通常使用 `torch.multiprocessing.spawn()` 创建多个进程
+- Torchrun：是 PyTorch 官方提供的启动工具，可以直接通过命令行启动分布式训练，更加简洁
+
+2. 进程管理
+- Multiprocessing-distributed：需要自己管理进程的创建、通信和同步
+- Torchrun：自动管理进程，处理进程的创建、通信和资源分配
+
+3. 配置复杂度
+- Multiprocessing-distributed：配置较为复杂，需要手动设置 `world_size`、`rank` 等参数
+- Torchrun：配置更加简单，通过环境变量自动设置分布式训练参数
+
+4. 代码侵入性
+- Multiprocessing-distributed：需要在代码中添加大量分布式训练相关的初始化和同步逻辑
+- Torchrun：对原始训练代码的侵入性较低，只需少量修改
+
+5. 灵活性
+- Multiprocessing-distributed：更加灵活，可以精细控制进程行为
+- Torchrun：标准化程度高，适用性更广
+
+下面我给你展示两种方式的简单代码示例：
+
+### Multiprocessing-distributed 示例：
+
+```python
+import torch
+import torch.multiprocessing as mp
+import torch.distributed as dist
+
+def main_worker(gpu, ngpus_per_node, args):
+    dist.init_process_group(
+        backend='nccl', 
+        init_method='tcp://localhost:23456',
+        world_size=ngpus_per_node, 
+        rank=gpu
+    )
+    
+    model = MyModel()
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
+
+def main():
+    ngpus_per_node = torch.cuda.device_count()
+    mp.spawn(main_worker, 
+             nprocs=ngpus_per_node,
+             args=(ngpus_per_node, args))
+
+if __name__ == '__main__':
+    main()
+```
+
+### Torchrun 示例：
+
+```python
+import torch
+import torch.distributed as dist
+
+def main():
+    dist.init_process_group(backend='nccl')
+    
+    model = MyModel()
+    model = torch.nn.parallel.DistributedDataParallel(model)
+
+if __name__ == '__main__':
+    main()
+```
+
+启动命令：
+- Multiprocessing-distributed：需要自定义启动脚本
+- Torchrun：`torchrun --nproc_per_node=4 train.py`
+
+总的来说，torchrun 更加现代和便捷，推荐在新项目中使用。对于需要精细控制的场景，multiprocessing-distributed 仍然是一个好选择。
+
+## Rank 和 Locl_Rank
+
+在分布式训练中，`local_rank` 和 `rank` 是两个不同但都很重要的概念：
+
+1. `rank`（全局进程编号）
+- 表示在所有分布式训练进程中的全局唯一标识符
+- 范围是 0 到 (world_size - 1)
+- 在整个分布式训练集群中唯一标识一个进程
+- 用于进程间通信和同步
+
+2. `local_rank`（本地进程编号）
+- 表示在单个机器/节点上的本地进程编号
+- 通常用于选择当前进程使用的 GPU 设备
+- 范围是 0 到 (local_world_size - 1)
+- 主要用于设备分配
+
+设置示例：
+
+```python
+import os
+import torch.distributed as dist
+
+# 通过环境变量获取
+world_size = int(os.environ.get('WORLD_SIZE', 1))  # 总的进程数
+rank = int(os.environ.get('RANK', 0))  # 全局进程编号
+local_rank = int(os.environ.get('LOCAL_RANK', 0))  # 本地进程编号
+
+# 初始化分布式环境
+dist.init_process_group(backend='nccl', world_size=world_size, rank=rank)
+
+# 选择 GPU
+device = torch.device(f'cuda:{local_rank}')
+```
+
+典型场景：
+- 4卡机器：
+  - `world_size` = 4
+  - `rank` 可能是 0, 1, 2, 3
+  - `local_rank` 也是 0, 1, 2, 3
+  - 每个进程使用对应编号的 GPU
+
+- 2机器各4卡：
+  - 第一台机器：`rank` 0-3, `local_rank` 0-3
+  - 第二台机器：`rank` 4-7, `local_rank` 0-3
+  - 确保每台机器的 `local_rank` 从 0 开始
+
+启动命令会自动设置这些环境变量：
+```bash
+torchrun --nproc_per_node=4 train.py
+```
+
+这样可以方便地实现跨机器的分布式训练。
+
+
+
+## 分布式训练中日志打印
+
+在分布式训练中，为了避免日志信息重复和混乱，通常只在 rank 0 进程上打印日志。这是因为 rank 0 代表主进程，负责协调和汇总信息。
+
+以下是在 `Trainer` 类中设置日志打印的推荐方法：
+
+```python
+import logging
+import torch.distributed as dist
+
+class Trainer:
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        model: nn.Module,
+        train_loader: DataLoader,
+        test_loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        device: Optional[torch.device] = None,
+    ) -> None:
+        # 获取当前进程的 rank
+        self.rank = dist.get_rank() if dist.is_initialized() else 0
+        
+        # 仅在 rank 0 进程配置日志
+        if self.rank == 0:
+            logging.basicConfig(level=logging.INFO, format='%(message)s')
+            self.logger = logging.getLogger(__name__)
+        else:
+            # 其他进程使用空日志记录器
+            self.logger = logging.getLogger(__name__)
+            self.logger.disabled = True
+
+    def train(self) -> None:
+        for epoch in range(1, self.args.epochs + 1):
+            # 训练逻辑
+            epoch_loss = self.run_epoch(epoch)
+
+            # 仅在 rank 0 进程记录日志
+            if self.rank == 0:
+                self.logger.info(f'Epoch {epoch}, Train Loss: {epoch_loss:.4f}')
+                test_metrics = self.test()
+                self.logger.info(f'Epoch {epoch}, Eval Metrics: {test_metrics}')
+
+    def test(self) -> Dict[str, float]:
+        # 测试逻辑
+        
+        # 同步测试结果
+        test_loss = ...
+        correct = ...
+
+        # 仅在 rank 0 进程打印日志
+        if self.rank == 0:
+            self.logger.info(
+                '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.
+                format(test_loss, correct, total_samples, accuracy))
+
+        return {'loss': test_loss, 'accuracy': accuracy}
+```
+
+关键点：
+1. 使用 `dist.get_rank()` 获取当前进程的 rank
+2. 仅在 rank 0 进程初始化和启用日志记录器
+3. 在需要打印日志的方法中，使用 `if self.rank == 0:` 条件
+4. 其他进程的日志记录器被禁用
+
+这种方法确保：
+- 只有一个进程（rank 0）打印日志
+- 避免日志信息重复
+- 集中显示训练和评估的关键信息
+
+如果需要更复杂的日志记录（如写入文件），可以在 rank 0 进程中配置文件日志记录器。
