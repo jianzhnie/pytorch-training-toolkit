@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import datasets, transforms
 
 sys.path.append(os.getcwd())
-from scaletorch.utils.get_sys_info import system_diagnostic
+from scaletorch.utils.dist_utils import system_diagnostic
 
 
 class DistributedTrainer:

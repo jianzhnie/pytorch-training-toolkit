@@ -16,37 +16,16 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import datasets, transforms
 
 sys.path.append(os.getcwd())
-from scaletorch.utils.get_sys_info import system_diagnostic
+from scaletorch.utils.dist_utils import (ddp_cleanup, ddp_setup,
+                                         system_diagnostic)
 
-
-def ddp_setup() -> None:
-    """Set up the Distributed Data Parallel (DDP) environment.
-
-    This function:
-    - Initializes the process group using NCCL backend
-    - Sets the current CUDA device based on LOCAL_RANK
-
-    Raises:
-        RuntimeError: If distributed environment variables are not set
-    """
-    try:
-        # Initialize distributed process group
-        dist.init_process_group(backend="nccl")
-
-        # Set CUDA device based on local rank
-        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
-    except KeyError:
-        raise RuntimeError(
-            "Distributed environment not set up. "
-            "Ensure you're using torchrun or torch.distributed.launch"
-        )
-    except Exception as e:
-        raise RuntimeError(f"Error setting up distributed environment: {e}")
-
-
-def cleanup() -> None:
-    """Clean up the distributed environment."""
-    dist.destroy_process_group()
+# Configure global logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+logger = logging.getLogger(__name__)
 
 
 class DistributedTrainer:
@@ -75,36 +54,45 @@ class DistributedTrainer:
             scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler
         """
         self.args = args
-        
+
         # 获取当前进程的 rank
         self.rank = dist.get_rank() if dist.is_initialized() else 0
-        self.local_rank = int(os.environ['LOCAL_RANK'])
+        self.local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
         # Setup device
-        self.device = torch.device(f'cuda:{self.local_rank}')
+        self.device = self._get_device()
 
         # Wrap model with DistributedDataParallel
         self.model = model.to(self.device)
-        self.model = DDP(self.model,
-                         device_ids=[self.local_rank],
-                         output_device=self.rank)
+        if dist.is_initialized():
+            model = DDP(model,
+                        device_ids=[self.local_rank],
+                        output_device=self.local_rank)
 
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.optimizer = optimizer
         self.scheduler = scheduler
 
-        # Configure logging for primary process
-        if self.rank == 0:
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s | %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S',
-            )
-            self.logger = logging.getLogger(__name__)
-        else:
-            self.logger = logging.getLogger(__name__)
-            self.logger.disabled = True
+        # Centralized logging configuration
+        self._configure_logging()
+
+    def _configure_logging(self) -> None:
+        """Configure logging with rank-aware settings."""
+        if self.rank != 0:
+            logging.disable(logging.INFO)
+
+    def _get_device(self) -> torch.device:
+        """Safely determine the compute device with comprehensive fallback.
+
+        Returns:
+            torch.device: Configured device for computation
+        """
+        if torch.cuda.is_available():
+            return torch.device(f'cuda:{self.local_rank}')
+        elif torch.backends.mps.is_available():
+            return torch.device('mps')
+        return torch.device('cpu')
 
     def run_batch(self, source: torch.Tensor, targets: torch.Tensor) -> float:
         """Process a single training batch in distributed setting.
@@ -157,7 +145,7 @@ class DistributedTrainer:
 
             # Log progress at specified intervals
             if self.rank == 0 and batch_idx % self.args.log_interval == 0:
-                self.logger.info(
+                logger.info(
                     f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(self.train_loader.dataset)} '
                     f'({100.0 * batch_idx / len(self.train_loader):.0f}%)]\tLoss: {batch_loss:.6f}'
                 )
@@ -199,7 +187,7 @@ class DistributedTrainer:
         accuracy = 100.0 * correct / len(self.test_loader.dataset)
 
         if self.rank == 0:
-            self.logger.info(
+            logger.info(
                 f'\nTest set: Average loss: {test_loss:.4f}, '
                 f'Accuracy: {correct}/{len(self.test_loader.dataset)} ({accuracy:.0f}%)\n'
             )
@@ -208,29 +196,33 @@ class DistributedTrainer:
 
     def train(self) -> None:
         """Execute complete distributed model training process."""
-        for epoch in range(1, self.args.epochs + 1):
-            # Train for one epoch
-            epoch_loss = self.run_epoch(epoch)
+        try:
+            for epoch in range(1, self.args.epochs + 1):
+                # Train for one epoch
+                epoch_loss = self.run_epoch(epoch)
 
-            # Log epoch loss on primary process (optional)
-            if self.rank == 0:
-                self.logger.info(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
+                # Log epoch loss on primary process (optional)
+                if self.rank == 0:
+                    logger.info(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
 
-            # Synchronize all processes
-            dist.barrier()
+                # Synchronize all processes
+                dist.barrier()
 
-            # Perform testing on primary process
-            test_metrics = self.test()
-            if self.rank == 0:
-                self.logger.info(
-                    f'Epoch {epoch}, Eval Metrics: {test_metrics}')
+                # Perform testing on primary process
+                test_metrics = self.test()
+                if self.rank == 0:
+                    logger.info(f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
-            # Step learning rate scheduler
-            self.scheduler.step()
+                # Step learning rate scheduler
+                self.scheduler.step()
 
-        # Optional: Save trained model on primary process
-        if self.rank == 0 and self.args.save_model:
-            self.save_checkpoint(self.args.epochs)
+            # Optional: Save trained model on primary process
+            if self.rank == 0 and self.args.save_model:
+                self.save_checkpoint(self.args.epochs)
+
+        except Exception as e:
+            logger.error(f'Training failed: {e}')
+            raise
 
     def save_checkpoint(self,
                         epoch: int,
@@ -261,8 +253,7 @@ class DistributedTrainer:
             checkpoint_path,
         )
 
-        self.logger.info(
-            f'Epoch {epoch} | Checkpoint saved at {checkpoint_path}')
+        logger.info(f'Epoch {epoch} | Checkpoint saved at {checkpoint_path}')
         return checkpoint_path
 
 
@@ -374,41 +365,43 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     # Determine number of GPUs
-    world_size = torch.cuda.device_count()
-
-    if world_size < 2:
-        print('Requires multiple GPUs for distributed training.')
-        return
+    # Distributed setup validation
+    if torch.cuda.device_count() < 2:
+        logger.error('Distributed training requires multiple GPUs')
+        sys.exit(1)
 
     # Provide guidance on how to run the distributed script
-    print('To run this script in a distributed manner, use:')
-    print('torchrun --nproc_per_node=<num_gpus> script_name.py')
-    # Launch distributed training processes
+    logger.info('To run this script in a distributed manner, use:')
+    logger.info('torchrun --nproc_per_node=<num_gpus> script_name.py')
 
     # Setup distributed environment
-    ddp_setup()
-    # Prepare data loaders
-    train_loader, test_loader = prepare_data(args)
+    try:
+        ddp_setup()
+        # Prepare data loaders
+        train_loader, test_loader = prepare_data(args)
 
-    # Initialize model
-    model = Net()
+        # Initialize model
+        model = Net()
 
-    # Setup optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+        # Setup optimizer and scheduler
+        optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+        scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
-    # Create distributed trainer
-    trainer = DistributedTrainer(
-        args=args,
-        model=model,
-        train_loader=train_loader,
-        test_loader=test_loader,
-        optimizer=optimizer,
-        scheduler=scheduler,
-    )
-    # Start training
-    trainer.train()
-    cleanup()
+        # Create distributed trainer
+        trainer = DistributedTrainer(
+            args=args,
+            model=model,
+            train_loader=train_loader,
+            test_loader=test_loader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+        )
+        # Start training
+        trainer.train()
+    except Exception as e:
+        logger.error(f'Training failed: {e}')
+    finally:
+        ddp_cleanup()
 
 
 if __name__ == '__main__':
