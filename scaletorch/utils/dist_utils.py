@@ -26,7 +26,7 @@ def system_diagnostic():
         f'可用内存: {psutil.virtual_memory().available / (1024**3):.2f} GB')
 
     # 网络接口信息
-    logger.info('\n网络接口:')
+    logger.info('网络接口:')
     for interface, addrs in psutil.net_if_addrs().items():
         logger.info(f'{interface}:')
         for addr in addrs:
@@ -34,7 +34,7 @@ def system_diagnostic():
                 logger.info(f'  IP地址: {addr.address}')
 
     # CUDA 和 PyTorch 信息
-    logger.info('\nCUDA 和 PyTorch 信息:')
+    logger.info('CUDA 和 PyTorch 信息:')
     logger.info(f'CUDA 可用: {torch.cuda.is_available()}')
     logger.info(f'CUDA 设备数: {torch.cuda.device_count()}')
     logger.info(f'cuDNN 版本: {torch.backends.cudnn.version()}')
