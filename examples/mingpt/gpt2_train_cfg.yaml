@@ -1,0 +1,24 @@
+data_config:
+  path: /home/robin/work_dir/pytorch-training-toolkit/mingpt/data/input.txt
+  block_size: 128
+  train_split: 0.9
+  truncate: 0.05
+gpt_config:
+  n_layer: 4
+  n_head: 4
+  n_embd: 128
+trainer_config:
+  max_epochs: 10
+  batch_size: 32
+  data_loader_workers: 4
+  grad_norm_clip: 1.0
+  snapshot_path: gpt_snapshot.pt
+  save_every: 3
+  use_amp: True
+optimizer_config:
+  weight_decay: 0.1
+  learning_rate: 0.0003
+
+hydra:
+  run:
+    dir: ./work_dir/mingpt
