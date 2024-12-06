@@ -5,34 +5,11 @@
 - [PyTorch 分布式概述](https://pytorch.org/tutorials/beginner/dist_overview.html)
 - [DistributedDataParallel API 文档](https://pytorch.org/docs/master/generated/torch.nn.parallel.DistributedDataParallel.html)
 
-[分布式数据并行 (DDP)](https://pytorch.org/docs/stable/nn.html#module-torch.nn.parallel) 是 PyTorch 中一个强大的模块，允许你在多个机器上并行化你的模型，非常适合大规模深度学习应用。要使用 DDP，你需要生成多个进程并在每个进程中创建一个 DDP 实例。
 
-但它是如何工作的呢？DDP 使用来自 [torch.distributed](https://pytorch.org/tutorials/intermediate/dist_tuto.html) 包的集体通信来同步梯度和缓冲区。这意味着每个进程都会有模型的一个副本，但它们会一起工作，就像模型在单个机器上一样进行训练。
-
-为了实现这一点，DDP 为模型中的每个参数注册了一个 autograd 钩子。当运行反向传播时，这个钩子会触发并在所有进程之间同步梯度。这确保每个进程都有相同的梯度，然后用于更新模型。
-
-使用 DDP 的推荐方式是为每个模型副本生成一个进程。模型副本可以跨多个设备。DDP 进程可以放在同一台机器上或跨机器。请注意，GPU 设备不能在 DDP 进程之间共享（即一个 GPU 对应一个 DDP 进程）。
 
 在本教程中，我们将从一个基本的 DDP 用例开始，然后演示更多高级用例，包括模型检查点和将 DDP 与模型并行结合。
 
 **注意**: 本教程中的代码在一个 8-GPU 服务器上运行，但可以轻松推广到其他环境。
-
-## `DataParallel` 和 `DistributedDataParallel` 的比较
-
-在我们深入之前，让我们澄清一下为什么你会考虑使用 `DistributedDataParallel` 而不是 `DataParallel`，尽管它的复杂性增加了：
-
-- 首先，`DataParallel` 是单进程、多线程的，但它只能在单个机器上工作。相比之下，`DistributedDataParallel` 是多进程的，支持单机和多机训练。由于线程间的 GIL 争用、每次迭代的复制模型以及分散输入和收集输出的额外开销，`DataParallel` 通常比 `DistributedDataParallel` 更慢，即使在单个机器上也是如此。
-- 回顾 [之前的教程](https://pytorch.org/tutorials/intermediate/model_parallel_tutorial.html)，如果你的模型太大而无法放入单个 GPU，你必须使用**模型并行**将其拆分到多个 GPU 上。`DistributedDataParallel` 与**模型并行**一起工作，而 `DataParallel` 目前不支持。当 DDP 与模型并行结合时，每个 DDP 进程将使用模型并行，所有进程共同使用数据并行。
-
-### 使用 DDP 而不是 DataParallel (DP)
-
-DataParallel 是一种较旧的数据并行方法。DP 非常简单（只需一行额外的代码），但它的性能要差得多。DDP 在架构上进行了一些改进：
-
-| 特性         | DataParallel                                              | DistributedDataParallel      |
-| ------------ | --------------------------------------------------------- | ---------------------------- |
-| 开销         | 更多开销；模型在每次前向传播时都会被复制和销毁            | 模型只复制一次               |
-| 支持的并行性 | 仅支持单节点并行                                          | 支持扩展到多台机器           |
-| 速度         | 较慢；使用单进程中的多线程，并且会遇到全局解释器锁（GIL） | 更快（没有 GIL），使用多进程 |
 
 ## 基本用例
 
@@ -418,8 +395,6 @@ torchrun --nproc_per_node=4 train.py
 
 这样可以方便地实现跨机器的分布式训练。
 
-
-
 ## 分布式训练中日志打印
 
 在分布式训练中，为了避免日志信息重复和混乱，通常只在 rank 0 进程上打印日志。这是因为 rank 0 代表主进程，负责协调和汇总信息。
@@ -492,3 +467,4 @@ class Trainer:
 - 集中显示训练和评估的关键信息
 
 如果需要更复杂的日志记录（如写入文件），可以在 rank 0 进程中配置文件日志记录器。
+
