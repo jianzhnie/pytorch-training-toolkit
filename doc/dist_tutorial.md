@@ -100,20 +100,20 @@ def run(rank, size):
 ## 集合通信
 
 | ![Scatter](https://pytorch.org/tutorials/_images/scatter.png) | ![Gather](https://pytorch.org/tutorials/_images/gather.png) |
-| ------------------------------------------------------------- | ----------------------------------------------------------- |
-| Scatter                                                       | Gather                                                      |
+| ------------------------------------------------------------ | :---------------------------------------------------------- |
+| Scatter                                                      | Gather                                                      |
 
 ______________________________________________________________________
 
 | ![Reduce](https://pytorch.org/tutorials/_images/reduce.png) | ![All-Reduce](https://pytorch.org/tutorials/_images/all_reduce.png) |
-| ----------------------------------------------------------- | ------------------------------------------------------------------- |
-| Reduce                                                      | All-Reduce                                                          |
+| :---------------------------------------------------------- | ------------------------------------------------------------ |
+| Reduce                                                      | All-Reduce                                                   |
 
 ______________________________________________________________________
 
-| ![Broadcast](https://pytorch.org/tutorials/_images/broadcast.png) | ![All-Gather](https://pytorch.org/tutorials/_images/all_gather.png) |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Broadcast                                                         | All-Gather                                                          |
+| <img src="https://pytorch.org/tutorials/_images/broadcast.png" alt="Broadcast"  /> | <img src="https://pytorch.org/tutorials/_images/all_gather.png" alt="All-Gather"  /> |
+| ------------------------------------------------------------ | ------------------------------------------------------------ |
+| Broadcast                                                    | All-Gather                                                   |
 
 与点对点通信相反，集合通信允许在**组**中的所有进程之间进行通信。组是我们所有进程的一个子集。要创建一个组，我们可以传递一个秩列表给`dist.new_group(group)`。默认情况下，在所有进程上执行通信。例如，为了获得所有进程上张量的总和，我们可以使用`dist.all_reduce(tensor, op, group)` 通信模块。
 
