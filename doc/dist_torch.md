@@ -85,8 +85,6 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 - 具有以太网互连的 CPU 主机
   - 使用 Gloo，除非有特定原因使用 MPI。
 
-
-
 ## 初始化分布式进程
 
 分布式包在使用之前，需要通过 [`torch.distributed.init_process_group()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.init_process_group) 或 [`torch.distributed.device_mesh.init_device_mesh()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.device_mesh.init_device_mesh) 函数进行初始化。两者都会阻塞，直到所有进程加入。
@@ -97,44 +95,44 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 
 有几个关键函数：
 
-### `torch.distributed.is_available()`
+### `distributed.is_available()`
 
 - 如果分布式包可用，返回 `True`。否则，`torch.distributed` 不会暴露任何其他 API。
 
-### `torch.distributed.init_process_group`
+### `distributed.init_process_group`
 
 - 初始化默认的分布式进程组。这还将初始化分布式包。
 
-​		有两种主要方式来初始化进程组：
+- 有两种主要方式来初始化进程组：
 
-- 显式指定 `store`、`rank` 和 `world_size`。
+  - 显式指定 `store`、`rank` 和 `world_size`。
 
-- 指定 `init_method`（一个 URL 字符串），指示如何/在哪里发现对等方。可以选择指定 `rank` 和 `world_size`，或者将所有必需参数编码在 URL 中并省略它们。
+  - 指定 `init_method`（一个 URL 字符串），指示如何/在哪里发现对等方。可以选择指定 `rank` 和 `world_size`，或者将所有必需参数编码在 URL 中并省略它们。
 
-如果没有指定，则假定 `init_method` 为 `“env://”`。
+- 如果没有指定，则假定 `init_method` 为 `“env://”`。
 
-参数: 
+核心参数: 
 
 - **backend** ([*str*](https://docs.python.org/3/library/stdtypes.html#str) *or* [*Backend*](https://pytorch.org/docs/main/distributed.html#torch.distributed.Backend)*,* *optional*) – 要使用的后端。根据构建时配置，有效值包括 `mpi`、`gloo`、`nccl` 和 `ucc`。如果未提供后端，则将创建 `gloo` 和 `nccl` 后端.
 - **init_method** ([*str*](https://docs.python.org/3/library/stdtypes.html#str)*,* *optional*) – 指定如何初始化进程组的 URL。如果未指定 `init_method` 或 `store`，则默认为“env://”。与 `store` 互斥。
 - **world_size** ([*int*](https://docs.python.org/3/library/functions.html#int)*,* *optional*) – 参与作业的进程数。如果指定了 `store`，则为必需。
 - **rank** ([*int*](https://docs.python.org/3/library/functions.html#int)*,* *optional*) – 当前进程的rank（它应该是一个介于 0 和 `world_size`-1 之间的数字）。如果指定了 `store`，则为必需。
-- **store** ([*Store*](https://pytorch.org/docs/main/distributed.html#torch.distributed.Store)*,* *optional*) – 所有工作进程可访问的键/值存储，用于交换连接/地址信息。与 `init_method` 互斥。
+- **store** ([*Store*](https://pytorch.org/docs/main/distributed.html#torch.distributed.Store)*,* *optional*) – 所有进程可访问的键/值存储，用于交换连接/地址信息。与 `init_method` 互斥。
 - **timeout** (*timedelta**,* *optional*) – 针对进程组执行操作的超时时间。默认值为 NCCL 为 10 分钟，其他后端为 30 分钟。这是在异步取消集合运算并使进程崩溃后的持续时间。这样做是因为 CUDA 执行是异步的，继续执行用户代码不再安全，因为失败的异步 NCCL 操作可能会导致后续 CUDA 操作在损坏的数据上运行。当设置 TORCH_NCCL_BLOCKING_WAIT 时，进程将阻塞并等待此超时。
 
-### `torch.distributed.is_initialized()`
+### `distributed.is_initialized()`
 
-- 检查默认进程组是否已初始化。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
+- 检查默认进程组是否已初始化。返回类型 [bool](https://docs.python.org/3/library/functions.html#bool)
 
-### `torch.distributed.is_mpi_available()`
+### `distributed.is_mpi_available()`
 
 - 检查 MPI 后端是否可用。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
 
-### `torch.distributed.is_gloo_available()`
+### `distributed.is_gloo_available()`
 
 - 检查 Gloo 后端是否可用。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
 
-### `torch.distributed.is_torchelastic_launched()`
+### `distributed.is_torchelastic_launched()`
 
 检查此进程是否由 `torch.distributed.elastic`（又名 torchelastic）启动。使用 `TORCHELASTIC_RUN_ID` 环境变量的存在作为代理来确定当前进程是否由 torchelastic 启动。这对于作业 ID 用于对等发现目的的非空值是合理的。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
 
@@ -268,15 +266,17 @@ def run(rank, size):
 ##  进程组间通信
 
 - [`broadcast()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.broadcast)
-- [`all_reduce()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.all_reduce)
 - [`reduce()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.reduce)
-- [`all_gather()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.all_gather)
+- [`all_reduce()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.all_reduce)
 - [`gather()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.gather)
+- [`all_gather()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.all_gather)
 - [`scatter()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.scatter)
 - [`reduce_scatter()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.reduce_scatter)
-- [`all_to_all()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.all_to_all)
+- [`ReduceOp`](https://pytorch.org/docs/stable/distributed.html#torch.distributed.ReduceOp)
 
-与点对点通信相反，集合允许跨组中所有进程的通信模式。例如，为了获得所有过程中所有张量的总和，我们可以使用 dist.all_reduce(tensor, op, group) 函数进行组间通信
+### 集合通信
+
+与点对点通信相反，集合通信允许跨组中所有进程的通信模式。例如，为了获得所有过程中所有张量的总和，我们可以使用 dist.all_reduce(tensor, op, group) 函数进行组间通信
 
 ```python
 """ All-Reduce example."""
@@ -295,23 +295,38 @@ def run(rank, size):
 - dist.reduce_op.MAX
 - dist.reduce_op.MIN
 
+### `distributed.ReduceOp`
+
+`torch.distributed.ReduceOp` 是一个类似于枚举的类，用于表示可用的归约操作：`SUM`、`PRODUCT`、`MIN`、`MAX`、`BAND`、`BOR`、`BXOR` 和 `PREMUL_SUM`。
+
+在使用 NCCL 后端时，`BAND`、`BOR` 和 `BXOR` 归约操作不可用。
+
+`AVG` 操作会在对值进行求和之前将其除以世界大小（world size）。`AVG` 仅在使用 NCCL 后端时可用，并且仅适用于 NCCL 版本 2.10 或更高版本。
+
+此外，`MAX`、`MIN` 和 `PRODUCT` 操作不支持复数张量。
+
+可以通过属性访问该类的值，例如 `ReduceOp.SUM`。它们用于指定归约集体操作的策略，例如 `reduce()`。
+
 除了 dist.all_reduce(tensor, op, group) 之外，PyTorch 中目前共有 6 种组间通信方式
 
-![img](https://pic1.zhimg.com/v2-812552c20c0785cf5dbd1f2182e79b9d_720w.jpg?source=d16d100b)
+### distributed.scatter
 
-1. distributed.scatter(tensor, scatter_list=None, src=0, group=None, async_op=False)： 将张量 scatter_list[i] 复制第 i 个进程的过程。 例如，在实现分布式训练时，我们将数据分成四份并分别发送到不同的机子上计算梯度。scatter 函数可以用来将信息从 src 进程发送到其他进程上。
+distributed.scatter(tensor, scatter_list=None, src=0, group=None, async_op=False)： 将张量 scatter_list[i] 复制第 i 个进程的过程。 例如，在实现分布式训练时，我们将数据分成四份并分别发送到不同的机子上计算梯度。scatter 函数可以用来将信息从 src 进程发送到其他进程上。
 
-|              |                                             |
-| ------------ | ------------------------------------------- |
+<img src="https://pic1.zhimg.com/v2-812552c20c0785cf5dbd1f2182e79b9d_720w.jpg?source=d16d100b" alt="img" style="zoom:50%;" />
+
 | tensor       | 发送的数据                                  |
+| ------------ | ------------------------------------------- |
 | scatter_list | 存储发送数据的列表（只需在 src 进程中指定） |
 | dst          | 发送进程的rank                              |
 | group        | 指定进程组                                  |
 | async_op     | 该 op 是否是异步操作                        |
 
-![img](https://pic1.zhimg.com/v2-602a2ed1126c9ef56e53235ab3f8adeb_720w.jpg?source=d16d100b)
+### distributed.gather
 
-2. distributed.gather(tensor, gather_list=None, dst=0, group=None, async_op=False)： 从 dst 中的所有进程复制 tensor。例如，在实现分布式训练时，不同进程计算得到的梯度需要汇总到一个进程，并计算平均值以获得统一的梯度。gather 函数可以将信息从别的进程汇总到 dst 进程。
+distributed.gather(tensor, gather_list=None, dst=0, group=None, async_op=False)： 从 dst 中的所有进程复制 tensor。例如，在实现分布式训练时，不同进程计算得到的梯度需要汇总到一个进程，并计算平均值以获得统一的梯度。gather 函数可以将信息从别的进程汇总到 dst 进程。
+
+<img src="https://pic1.zhimg.com/v2-602a2ed1126c9ef56e53235ab3f8adeb_720w.jpg?source=d16d100b" alt="img" style="zoom:50%;" />
 
 |             |                                           |
 | ----------- | ----------------------------------------- |
@@ -321,23 +336,39 @@ def run(rank, size):
 | group       | 指定进程组                                |
 | async_op    | 该op是否是异步操作                        |
 
-![img](https://pic1.zhimg.com/v2-348e954c4c77ef281c6204bccf0c8f5f_720w.jpg?source=d16d100b)
+### distributed.reduce
 
-3. distributed.reduce(tensor, dst, op, group)：将 op 应用于所有 tensor，并将结果存储在 dst 中。
+distributed.reduce(tensor, dst, op, group)：将 op 应用于所有 tensor，并将结果存储在 dst 中。
 
-![img](https://picx.zhimg.com/v2-b7597d4d57bbc6ba47a59166b8331d8f_720w.jpg?source=d16d100b)
-
-4. distributed.all_reduce(tensor, op, group)： 与 reduce 相同，但是结果存储在所有进程中。
-
-![img](https://pic1.zhimg.com/v2-8ae0a62a27420e1de19fbbea5dc9a09b_720w.jpg?source=d16d100b)
-
-5. distributed.broadcast(tensor, src, group)：将tensor从src复制到所有其他进程。
-
-![img](https://picx.zhimg.com/v2-21ce7cb6b3be25d25ee02b5fe0b9c70c_720w.jpg?source=d16d100b)
-
-6. distributed.all_gather(tensor_list, tensor, group)：将所有进程中的 tensor 从所有进程复制到 tensor_list
+<img src="https://pic1.zhimg.com/v2-348e954c4c77ef281c6204bccf0c8f5f_720w.jpg?source=d16d100b" alt="img" style="zoom:50%;" />
 
 
+
+### distributed.all_reduce
+
+distributed.all_reduce(tensor, op, group)： 与 reduce 相同，但是结果存储在所有进程中。
+
+<img src="https://picx.zhimg.com/v2-b7597d4d57bbc6ba47a59166b8331d8f_720w.jpg?source=d16d100b" alt="img" style="zoom:50%;" />
+
+
+
+### distributed.broadcast
+
+distributed.broadcast(tensor, src, group)：将张量广播给整个组。将tensor从src复制到所有其他进程。
+
+`tensor`参与集体的所有进程必须具有相同数量的元素。
+
+
+
+
+
+<img src="https://pic1.zhimg.com/v2-8ae0a62a27420e1de19fbbea5dc9a09b_720w.jpg?source=d16d100b" alt="img" style="zoom:50%;" />
+
+### distributed.all_gather
+
+distributed.all_gather(tensor_list, tensor, group)：将所有进程中的 tensor 从所有进程复制到 tensor_list
+
+<img src="https://picx.zhimg.com/v2-21ce7cb6b3be25d25ee02b5fe0b9c70c_720w.jpg?source=d16d100b" alt="img" style="zoom:50%;" />
 
 ## 同步和异步集合运算
 
@@ -372,3 +403,116 @@ if rank == 0:
     # 具体取决于 allreduce 是否在 add 完成之前覆盖了值。
     print(output)
 ```
+
+## 分布式程序启动工具
+
+`torch.distributed` 包还提供了一个启动工具 `torch.distributed.launch`。这个辅助工具可以用于在每个训练节点上启动多个进程进行分布式训练。
+
+`torch.distributed.launch` 是一个模块，它会在每个训练节点上生成多个分布式训练进程。
+
+> 警告
+>
+> 该模块将被弃用，取而代之的是 `torchrun`。
+
+该工具可用于单节点分布式训练，其中每个节点将生成一个或多个进程。该工具可用于 CPU 训练或 GPU 训练。如果该工具用于 GPU 训练，每个分布式进程将在单个 GPU 上运行。这可以显著提高单节点训练性能。它还可以用于多节点分布式训练，通过在每个节点上生成多个进程来提高多节点分布式训练性能。这对于具有多个支持直接 GPU 的 Infiniband 接口的系统尤其有益，因为所有这些接口都可以用于聚合通信带宽。
+
+在单节点分布式训练或多节点分布式训练的情况下，该工具将启动每个节点的给定数量的进程（`--nproc-per-node`）。如果用于 GPU 训练，这个数量需要小于或等于当前系统上的 GPU 数量（`nproc_per_node`），并且每个进程将在从 GPU 0 到 GPU (`nproc_per_node - 1`) 的单个 GPU 上运行。
+
+如何使用该模块：
+
+单节点多进程分布式训练
+
+```bash
+python -m torch.distributed.launch --nproc-per-node=NUM_GPUS_YOU_HAVE
+           YOUR_TRAINING_SCRIPT.py (--arg1 --arg2 --arg3 以及你的训练脚本的所有其他参数)
+```
+
+多节点多进程分布式训练（例如，两个节点）
+
+节点 1：（IP: 192.168.1.1，有一个空闲端口：1234）
+
+```bash
+python -m torch.distributed.launch --nproc-per-node=NUM_GPUS_YOU_HAVE
+           --nnodes=2 --node-rank=0 --master-addr="192.168.1.1"
+           --master-port=1234 YOUR_TRAINING_SCRIPT.py (--arg1 --arg2 --arg3
+           以及你的训练脚本的所有其他参数)
+```
+
+节点 2：
+
+```bash
+python -m torch.distributed.launch --nproc-per-node=NUM_GPUS_YOU_HAVE
+           --nnodes=2 --node-rank=1 --master-addr="192.168.1.1"
+           --master-port=1234 YOUR_TRAINING_SCRIPT.py (--arg1 --arg2 --arg3
+           以及你的训练脚本的所有其他参数)
+```
+
+要查看该模块提供的可选参数：
+
+```bash
+python -m torch.distributed.launch --help
+```
+
+重要提示：
+
+1. 该工具和多进程分布式（单节点或多节点）GPU 训练目前仅在使用 NCCL 分布式后端时才能达到最佳性能。因此，NCCL 后端是用于 GPU 训练的推荐后端。
+
+2. 在你的训练程序中，你必须解析命令行参数 `--local-rank=LOCAL_PROCESS_RANK`，该参数将由该模块提供。如果你的训练程序使用 GPU，你应该确保你的代码仅在 `LOCAL_PROCESS_RANK` 对应的 GPU 设备上运行。可以通过以下方式实现：
+
+解析 `local_rank` 参数
+
+```python
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--local-rank", "--local_rank", type=int)
+args = parser.parse_args()
+```
+
+将设备设置为本地排名，使用以下任一方式：
+
+```python
+torch.cuda.set_device(args.local_rank)  # 在你的代码运行之前
+```
+
+或
+
+```python
+with torch.cuda.device(args.local_rank):
+    # 你的代码运行
+    ...
+```
+
+在版本 2.0.0 中更改：启动器会将 `--local-rank=<rank>` 参数传递给你的脚本。从 PyTorch 2.0.0 开始，破折号 `--local-rank` 是首选，而不是之前使用的下划线 `--local_rank`。
+
+为了向后兼容，用户可能需要在参数解析代码中处理这两种情况。这意味着在参数解析器中同时包含 `--local-rank` 和 `--local_rank`。如果只提供 `--local-rank`，启动器将触发错误：“error: unrecognized arguments: –local-rank=<rank>”。对于仅支持 PyTorch 2.0.0+ 的训练代码，包含 `--local-rank` 应该足够。
+
+3. 在你的训练程序中，你应该在开始时调用以下函数来启动分布式后端。强烈建议使用 `init_method=env://`。其他初始化方法（例如 `tcp://`）可能有效，但 `env://` 是该模块官方支持的方法。
+
+```python
+torch.distributed.init_process_group(backend='YOUR BACKEND',
+                                     init_method='env://')
+```
+
+4. 在你的训练程序中，你可以使用常规的分布式函数或使用 `torch.nn.parallel.DistributedDataParallel()` 模块。如果你的训练程序使用 GPU 进行训练并希望使用 `torch.nn.parallel.DistributedDataParallel()` 模块，可以按如下方式配置：
+
+```python
+model = torch.nn.parallel.DistributedDataParallel(model,
+                                                  device_ids=[args.local_rank],
+                                                  output_device=args.local_rank)
+```
+
+请确保 `device_ids` 参数设置为你的代码将运行的唯一 GPU 设备 ID。这通常是进程的本地排名。换句话说，`device_ids` 需要是 `[args.local_rank]`，`output_device` 需要是 `args.local_rank`，以便使用该工具。
+
+5. 另一种通过环境变量 `LOCAL_RANK` 将 `local_rank` 传递给子进程的方式。当你使用 `--use-env=True` 启动脚本时，此行为将被启用。你必须调整上述子进程示例，将 `args.local_rank` 替换为 `os.environ['LOCAL_RANK']`；当你指定此标志时，启动器不会传递 `--local-rank`。
+
+警告
+
+`local_rank` 不是全局唯一的：它在机器上的每个进程中是唯一的。因此，不要使用它来决定是否应该执行某些操作，例如写入网络文件系统。参见 https://github.com/pytorch/pytorch/issues/12042 了解如果不正确处理可能会出现的问题。
+
+## 生成工具
+
+`torch.multiprocessing` 包还提供了一个生成函数 `torch.multiprocessing.spawn()`。这个辅助函数可以用于生成多个进程。它通过传入你想要运行的函数并生成 N 个进程来运行它。这也可以用于多进程分布式训练。
+
+有关如何使用它的参考，请参阅 PyTorch 示例 - ImageNet 实现。
+
+请注意，此函数需要 Python 3.4 或更高版本。
