@@ -1,14 +1,19 @@
-# PyTorch 分布式
+# Distributed and Parallel Training for PyTorch
 
-Distributed and Parallel Training for PyTorch
+`torch.distributed`包的底层通信主要使用 Collective Communication (c10d) library 来支持跨组内的进程发送张量，并主要支持两种类型的通信 API：
 
-本教程中， 我们将介绍PyTorch的分布式包。我们将了解如何设置分布式环境，使用不同的通信策略，并深入了解该包的一些内部机制。
+- collective communication APIs: 
+  - Distributed Data-Parallel Training (DDP)
+- P2P communication APIs: 
+  - RPC-Based Distributed Training (RPC)
+
+这两种通信 API 在 PyTorch 中分别对应了两种分布式训练方式：Distributed Data-Parallel Training (DDP) 和 RPC-Based Distributed Training (RPC)。 本教程着重探讨 Distributed Data-Parallel Training (DDP) 的通信方式和 API，我们将了解如何设置分布式环境，使用不同的通信策略，并深入了解该包的一些内部机制。
 
 ## 分布式设置模板
 
 PyTorch中包含的分布式包（即`torch.distributed`）使研究人员和实践者能够轻松地将计算并行化到进程和机器集群中。为此，它利用消息传递语义，允许每个进程将数据传递给任何其他进程。与多进程（`torch.multiprocessing`）包不同，进程可以使用不同的通信后端，并且不限于在同一台机器上执行。
 
-为了开始，我们需要能够同时运行多个进程。如果你有权访问计算集群，你应该咨询本地系统管理员或使用你喜欢的协调工具（例如，[pdsh](https://linux.die.net/man/1/pdsh)，[clustershell](https://cea-hpc.github.io/clustershell/)，或 [slurm](https://slurm.schedmd.com/)。出于本教程的目的，我们将使用单台机器并生成多个进程，使用以下模板。
+为了开始，我们需要能够同时运行多个进程。出于本教程的目的，我们将使用单台机器并生成多个进程，使用以下模板。
 
 ```python
 """run.py:"""
@@ -46,22 +51,11 @@ if __name__ == "__main__":
 
 让我们看一下`init_process`函数。它确保每个进程都能够通过主进程使用相同的IP地址和端口进行协调。请注意，我们使用了`gloo`后端，但还有其他可用的后端。
 
-### **通信方式**
-
-torch.distributed 的底层通信主要使用 Collective Communication (c10d) library 来支持跨组内的进程发送张量，并主要支持两种类型的通信 API：
-
-- collective communication APIs: 
-  - Distributed Data-Parallel Training (DDP)
-- P2P communication APIs: 
-  - RPC-Based Distributed Training (RPC)
-
-这两种通信 API 在 PyTorch 中分别对应了两种分布式训练方式：Distributed Data-Parallel Training (DDP) 和 RPC-Based Distributed Training (RPC)。本文着重探讨 Distributed Data-Parallel Training (DDP) 的通信方式和 API。
-
 ## **torch.distributed 概念与定义**
 
-[分布式数据并行 (DDP)](https://pytorch.org/docs/stable/nn.html#module-torch.nn.parallel) 是 PyTorch 中一个强大的模块，允许在多个机器上并行化你的模型，非常适合大规模深度学习应用。
+### **定义**
 
-**定义**：首先我们提供 Torch.distributed 的官方定义
+首先我们提供 Torch.distributed 的官方定义
 
 - `torch.distributed` 包为运行在一台或多台机器上的多个计算节点之间的 **PyTorch 提供支持多进程并行性通信的原语**， 能轻松地将跨进程和机器集群的计算并行化。
 
@@ -73,8 +67,8 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 
 在我们深入之前，让我们澄清一下为什么你需要考虑使用 `DistributedDataParallel` 而不是 `DataParallel`，尽管它的复杂性增加了：
 
-- 首先，`DataParallel` 是单进程、多线程的，但它只能在单个机器上工作。相比之下，`DistributedDataParallel` 是多进程的，支持单机和多机训练。
-- 每个进程包含一个独立的Python解释器，消除了从单个Python进程驱动多个执行线程、模型副本或GPUs带来的额外解释器开销和“GIL-thrashing”。这对于大量使用Python运行时的模型尤其重要，包括具有递归层或许多小组件的模型。由于线程间的 GIL 争用、每次迭代的复制模型以及分散输入和收集输出的额外开销，`DataParallel` 通常比 `DistributedDataParallel` 更慢，即使在单个机器上也是如此。
+- 首先，`DataParallel` 是单进程、多线程的，它只能在单个机器上工作。相比之下，`DistributedDataParallel` 是多进程的，支持单机和多机训练。
+- `DistributedDataParallel` 的每个进程包含一个独立的Python解释器，消除了从单个Python进程驱动多个执行线程、模型副本或GPUs带来的额外解释器开销和“GIL-thrashing”。这对于大量使用Python运行时的模型尤其重要，包括具有递归层或许多小组件的模型。由于线程间的 GIL 争用、每次迭代的复制模型以及分散输入和收集输出的额外开销，`DataParallel` 通常比 `DistributedDataParallel` 更慢，即使在单个机器上也是如此。
 - 每个进程维护自己的优化器，并在每次迭代中执行完整的优化步骤。虽然这看起来是多余的，因为梯度已经在进程间聚集并平均化，因此对于每个进程来说都是相同的，但这意味着不需要参数广播步骤，减少了在节点间传输张量所花费的时间。
 - 如果你的模型太大而无法放入单个 GPU，你必须使用**模型并行**将其拆分到多个 GPU 上。`DistributedDataParallel` 与**模型并行**一起工作，而 `DataParallel` 目前不支持。当 DDP 与模型并行结合时，每个 DDP 进程将使用模型并行，所有进程共同使用数据并行。
 
@@ -103,27 +97,19 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 | all_to_all     |   ✘    |   ✘    |   ✓   |   ?   |   ✘    |   ✓    |
 | barrier        |   ✓    |   ✘    |   ✓   |   ?   |   ✘    |   ✓    |
 
-默认情况下，对于 Linux，Gloo 和 NCCL 后端已构建并包含在 PyTorch 分布式版中（仅在使用 CUDA 构建时才包含 NCCL）。MPI 是一个可选后端，只有从源代码构建 PyTorch 时才可以包含它。（例如，在安装了 MPI 的主机上构建 PyTorch。）
+默认情况下，对于 Linux，Gloo 和 NCCL 后端已构建并包含在 PyTorch 分布式版中（仅在使用 CUDA 构建时才包含 NCCL）。MPI 是一个可选后端，只有从源代码构建 PyTorch 时才包含MPI。（例如，在安装了 MPI 的主机上构建 PyTorch。）
 
 ### **Gloo后端**
 
-到目前为止，我们已经广泛使用了[Gloo后端](https://github.com/facebookincubator/gloo)。它非常方便作为开发平台，因为它包含在预编译的PyTorch二进制文件中，并且适用于Linux（自0.2版本起）和macOS（自1.3版本起）。它支持CPU上的所有点对点和集合操作，以及GPU上的所有集合操作。GPU张量的集合操作的实现没有NCCL后端提供的优化。
-
-正如你肯定注意到的，如果将`model`放在GPU上，我们的分布式SGD示例将无法工作。为了使用多个GPU，让我们也进行以下修改：
-
-1. 使用`device = torch.device("cuda:{}".format(rank))`
-2. model = Net(), → model = Net().to(device)
-3. 使用`data, target = data.to(device), target.to(device)`
-
-通过上述修改，我们的模型现在在两个GPU上进行训练，你可以使用`watch nvidia-smi`监控它们的利用率。
+[Gloo后端](https://github.com/facebookincubator/gloo) 支持CPU上的所有点对点和集合操作，以及GPU上的所有集合操作。GPU张量的集合操作的实现没有NCCL后端提供的优化。
 
 ### **MPI后端**
 
 消息传递接口（MPI）是高性能计算领域中标准化的工具。它允许进行点对点和集合通信，并且是`torch.distributed`API的主要灵感来源。有几个MPI实现（例如[Open-MPI](https://www.open-mpi.org/)，[MVAPICH2](http://mvapich.cse.ohio-state.edu/)，[Intel MPI](https://software.intel.com/en-us/intel-mpi-library)），每个都针对不同的目的进行了优化。使用MPI后端的优势在于MPI的广泛可用性——以及在大型计算机集群上的高度优化。[一些](https://developer.nvidia.com/mvapich) [最近的](https://developer.nvidia.com/ibm-spectrum-mpi) [实现](https://www.open-mpi.org/) 还能够利用CUDA IPC和GPU Direct技术，以避免通过CPU进行内存复制。
 
-不幸的是，PyTorch的二进制文件不能包含MPI实现，我们必须手动重新编译它。幸运的是，这个过程相当简单，因为PyTorch在编译时会*自动*查找可用的MPI实现。以下步骤通过从源代码安装PyTorch来安装MPI后端。
+不幸的是，PyTorch的二进制文件未包含MPI实现，必须手动重新编译。幸运的是，这个过程相当简单，因为PyTorch在编译时会自动查找可用的MPI实现。以下步骤通过从源代码安装PyTorch来安装MPI后端。
 
-1. 创建并激活你的Anaconda环境，按照 [指南](https://github.com/pytorch/pytorch#from-source)安装所有先决条件，但**不要**运行`python setup.py install`。
+1. 创建并激活 Anaconda环境，按照 [指南](https://github.com/pytorch/pytorch#from-source)安装所有先决条件，**不要**运行`python setup.py install`。
 2. 选择并安装你喜欢的MPI实现。请注意，启用CUDA-aware MPI可能需要一些额外的步骤。在我们的例子中，我们将坚持使用不带GPU支持的Open-MPI：`conda install -c conda-forge openmpi`
 3. 现在，进入你克隆的PyTorch仓库并执行`python setup.py install`。
 
@@ -132,7 +118,7 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 1. 将`if __name__ == '__main__':`下的内容替换为`init_process(0, 0, run, backend='mpi')`。
 2. 运行 `mpirun -n 4 python myscript.py`。
 
-这些更改的原因是MPI需要在生成进程之前创建自己的环境。MPI还将生成自己的进程并执行`初始化方法 (#initialization-methods)中描述的握手`，使`rank`和`size`参数对于`init_process_group`来说是多余的。这实际上非常强大，因为你可以将额外的参数传递给`mpirun`，以便为每个进程定制计算资源。（例如，每个进程的核心数量，手动分配机器到特定秩，以及[更多](https://www.open-mpi.org/faq/?category=running#mpirun-hostfile)）这样做，你应该得到与其他通信后端相同的熟悉输出。
+这些更改的原因是MPI需要在生成进程之前创建自己的环境。MPI还将生成自己的进程并执行`初始化方法 (#initialization-methods)`中描述，使`rank`和`size`参数对于`init_process_group`来说是多余的。这实际上非常强大，因为你可以将额外的参数传递给`mpirun`，以便为每个进程定制计算资源。（例如，每个进程的核心数量，手动分配机器到特定秩，以及[其他更多参数](https://www.open-mpi.org/faq/?category=running#mpirun-hostfile)）这样做，你应该得到与其他通信后端相同的熟悉输出。
 
 ### **NCCL后端**
 
@@ -156,19 +142,21 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 
 ## 初始化分布式进程
 
-分布式包在使用之前，需要通过 [`torch.distributed.init_process_group()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.init_process_group) 或 [`torch.distributed.device_mesh.init_device_mesh()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.device_mesh.init_device_mesh) 函数进行初始化。两者都会阻塞，直到所有进程加入。
+在使用分布式包之前，需要通过 [`torch.distributed.init_process_group()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.init_process_group) 或 [`torch.distributed.device_mesh.init_device_mesh()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.device_mesh.init_device_mesh) 函数进行初始化。这两者都会阻塞，直到所有进程加入。
 
 > 警告
 >
 > 初始化不是线程安全的。进程组创建应从单个线程执行，以防止在不同rank上分配不一致的“UUID”，并防止在初始化期间导致竞争条件，从而导致挂起。
 
+### 关键函数
+
 有几个关键函数：
 
-### `distributed.is_available()`
+#### `distributed.is_available()`
 
-- 如果分布式包可用，返回 `True`。否则，`torch.distributed` 不会暴露任何其他 API。
+- 如果分布式包可用，返回 `True`。否则，分布式包不可用， `torch.distributed` 不会暴露任何其他 API。
 
-### `distributed.init_process_group`
+#### `distributed.init_process_group`
 
 - 初始化默认的分布式进程组。这还将初始化分布式包。
 
@@ -189,25 +177,38 @@ torch.distributed 的底层通信主要使用 Collective Communication (c10d) li
 - **store** ([*Store*](https://pytorch.org/docs/main/distributed.html#torch.distributed.Store)*,* *optional*) – 所有进程可访问的键/值存储，用于交换连接/地址信息。与 `init_method` 互斥。
 - **timeout** (*timedelta**,* *optional*) – 针对进程组执行操作的超时时间。默认值为 NCCL 为 10 分钟，其他后端为 30 分钟。这是在异步取消集合运算并使进程崩溃后的持续时间。这样做是因为 CUDA 执行是异步的，继续执行用户代码不再安全，因为失败的异步 NCCL 操作可能会导致后续 CUDA 操作在损坏的数据上运行。当设置 TORCH_NCCL_BLOCKING_WAIT 时，进程将阻塞并等待此超时。
 
-### `distributed.is_initialized()`
+#### `distributed.is_initialized()`
 
 - 检查默认进程组是否已初始化。返回类型 [bool](https://docs.python.org/3/library/functions.html#bool)
 
-### `distributed.is_mpi_available()`
-
-- 检查 MPI 后端是否可用。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
-
-### `distributed.is_gloo_available()`
-
-- 检查 Gloo 后端是否可用。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
-
-### `distributed.is_torchelastic_launched()`
+#### `distributed.is_torchelastic_launched()`
 
 检查此进程是否由 `torch.distributed.elastic`（又名 torchelastic）启动。使用 `TORCHELASTIC_RUN_ID` 环境变量的存在作为代理来确定当前进程是否由 torchelastic 启动。这对于作业 ID 用于对等发现目的的非空值是合理的。返回类型[bool](https://docs.python.org/3/library/functions.html#bool)
 
 ### 初始化方法
 
-Pytorch 分布式初始化函数：`dist.init_process_group(backend, init_method)`。下面，我们将讨论各种初始化方法，这些方法负责在每个进程之间的初步协调步骤。 目前支持三种初始化方法， 初始化方法的选择取决于你的硬件设置，一种方法可能比其他方法更合适。除了以下部分，请参考[官方文档](https://pytorch.org/docs/stable/distributed.html#initialization)以获取更多信息。
+Pytorch 分布式初始化需要调用函数：`dist.init_process_group(backend, init_method)`。下面，我们将讨论各种初始化方法，这些方法负责在每个进程之间的初步协调步骤。 目前支持三种初始化方法， 初始化方法的选择取决于你的硬件设置，或许一种方法可能比其他方法更合适，请参考[官方文档](https://pytorch.org/docs/stable/distributed.html#initialization)以获取更多信息。
+
+#### 环境变量初始化
+
+环境变量初始化是默认的初始化方法。通过在所有机器上设置以下四个环境变量，所有进程将能够正确连接到主进程，获取有关其他进程的信息。
+
+- `MASTER_ADDR`：主进程所在机器的IP地址。
+
+- `MASTER_PORT`：主进程所在机器上的一个空闲端口。
+- `WORLD_SIZE`： 总进程数，以便主进程知道要等待多少个工作进程。
+- `RANK`：每个进程的秩，以便它们知道它是否是主进程或工作进程。
+
+rank 0 的机器将用于设置所有连接。
+
+这是，环境变量初始化是默认的初始化方法， 意味着 `init_method` 不必指定（或可以为 `env://`）。
+
+```python
+import torch.distributed as dist
+
+# rank应始终指定
+dist.init_process_group(backend, init_method='env://')
+```
 
 #### TCP 初始化
 
@@ -237,28 +238,7 @@ dist.init_process_group(backend, init_method='file:///mnt/nfs/sharedfile',
                         world_size=4, rank=args.rank)
 ```
 
-#### 环境变量初始化
-
-我们一直在使用环境变量初始化方法。通过在所有机器上设置以下四个环境变量，所有进程将能够正确连接到主进程，获取有关其他进程的信息。
-
-- `MASTER_ADDR`：主进程所在机器的IP地址。
-
-- `MASTER_PORT`：主进程所在机器上的一个空闲端口。
-- `WORLD_SIZE`： 总进程数，以便主进程知道要等待多少个工作进程。
-- `RANK`：每个进程的秩，以便它们知道它是否是主进程或工作进程。
-
-rank 0 的机器将用于设置所有连接。
-
-这是默认方法，意味着 `init_method` 不必指定（或可以为 `env://`）。
-
-```python
-import torch.distributed as dist
-
-# rank应始终指定
-dist.init_process_group(backend, init_method='env://')
-```
-
-## 初始化后
+## 完成初始化后
 
 一旦运行了 [`torch.distributed.init_process_group()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.init_process_group)，以下函数就可以使用了。要检查进程组是否已经初始化，请使用 [`torch.distributed.is_initialized()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.is_initialized)。
 
@@ -271,7 +251,7 @@ dist.init_process_group(backend, init_method='env://')
 
 在退出时清理资源很重要，通过调用 `destroy_process_group()` 来实现。
 
-最简单的模式是在训练脚本中不再需要通信的点（通常在主函数的末尾附近），对每个训练器进程调用 `destroy_process_group()`，而不是在外部进程启动器级别。
+最简单的模式是在训练脚本中不再需要通信的地方（通常在主函数的末尾附近），对每个训练器进程调用 `destroy_process_group()`，而不是在外部进程启动器级别。
 
 如果 `destroy_process_group()` 没有被所有等级在超时持续时间内调用，尤其是在应用程序中有多个进程组时（例如，用于 N-D 并行），退出时可能会出现挂起。这是因为 ProcessGroupNCCL 的析构函数调用 `ncclCommAbort`，这必须是集合运算调用的，但 Python 的 GC 调用 ProcessGroupNCCL 的析构函数的顺序是不确定的。调用 `destroy_process_group()` 有助于确保 `ncclCommAbort` 以一致的顺序在所有等级上调用，并避免在 ProcessGroupNCCL 的析构函数期间调用 `ncclCommAbort`。
 
@@ -382,6 +362,8 @@ def run(rank, size):
 
 支持的操作符的完整列表可以在 [这里](https://pytorch.org/docs/stable/distributed.html#torch.distributed.ReduceOp)找到。
 
+### 常用集合通信函数
+
 除了`dist.all_reduce(tensor, op, group)`之外，PyTorch中还实现了许多其他集合。以下是一些支持的集合。
 
 - `dist.broadcast(tensor, src, group)`：将`tensor`从`src`复制到所有其他进程。
@@ -395,7 +377,7 @@ def run(rank, size):
 
 支持的集合的完整列表可以通过查看PyTorch分布式的最新文档[(链接)](https://pytorch.org/docs/stable/distributed.html)找到。
 
-### `distributed.ReduceOp`
+#### `distributed.ReduceOp`
 
 `torch.distributed.ReduceOp` 是一个类似于枚举的类，用于表示可用的归约操作：`SUM`、`PRODUCT`、`MIN`、`MAX`、`BAND`、`BOR`、`BXOR` 和 `PREMUL_SUM`。
 
@@ -409,7 +391,7 @@ def run(rank, size):
 
 除了 dist.all_reduce(tensor, op, group) 之外，PyTorch 中目前共有 6 种组间通信方式
 
-### distributed.scatter
+#### distributed.scatter
 
 distributed.scatter(tensor, scatter_list=None, src=0, group=None, async_op=False)： 将张量 scatter_list[i] 复制第 i 个进程的过程。 例如，在实现分布式训练时，我们将数据分成四份并分别发送到不同的机子上计算梯度。scatter 函数可以用来将信息从 src 进程发送到其他进程上。
 
@@ -422,7 +404,7 @@ distributed.scatter(tensor, scatter_list=None, src=0, group=None, async_op=False
 | group        | 指定进程组                                  |
 | async_op     | 该 op 是否是异步操作                        |
 
-### distributed.gather
+#### distributed.gather
 
 distributed.gather(tensor, gather_list=None, dst=0, group=None, async_op=False)： 从 dst 中的所有进程复制 tensor。例如，在实现分布式训练时，不同进程计算得到的梯度需要汇总到一个进程，并计算平均值以获得统一的梯度。gather 函数可以将信息从别的进程汇总到 dst 进程。
 
@@ -435,7 +417,7 @@ distributed.gather(tensor, gather_list=None, dst=0, group=None, async_op=False)�
 | group       | 指定进程组                                |
 | async_op    | 该op是否是异步操作                        |
 
-### distributed.reduce
+#### distributed.reduce
 
 distributed.reduce(tensor, dst, op, group)：将 op 应用于所有 tensor，并将结果存储在 dst 中。
 
@@ -443,7 +425,7 @@ distributed.reduce(tensor, dst, op, group)：将 op 应用于所有 tensor，并
 
 
 
-### distributed.all_reduce
+#### distributed.all_reduce
 
 distributed.all_reduce(tensor, op, group)： 与 reduce 相同，但是结果存储在所有进程中。
 
@@ -451,7 +433,7 @@ distributed.all_reduce(tensor, op, group)： 与 reduce 相同，但是结果存
 
 
 
-### distributed.broadcast
+#### distributed.broadcast
 
 distributed.broadcast(tensor, src, group)：将张量广播给整个组。将tensor从src复制到所有其他进程。
 
@@ -459,7 +441,7 @@ distributed.broadcast(tensor, src, group)：将张量广播给整个组。将ten
 
 <img src="https://pytorch.org/tutorials/_images/broadcast.png" alt="播送" style="zoom:50%;" />
 
-### distributed.all_gather
+#### distributed.all_gather
 
 distributed.all_gather(tensor_list, tensor, group)：将所有进程中的 tensor 从所有进程复制到 tensor_list
 
@@ -500,6 +482,8 @@ if rank == 0:
 ```
 
 ## 分布式程序启动工具
+
+### Launch utility
 
 `torch.distributed` 包还提供了一个启动工具 `torch.distributed.launch`。这个辅助工具可以用于在每个训练节点上启动多个进程进行分布式训练。
 
@@ -600,17 +584,13 @@ model = torch.nn.parallel.DistributedDataParallel(model,
 
 5. 另一种通过环境变量 `LOCAL_RANK` 将 `local_rank` 传递给子进程的方式。当你使用 `--use-env=True` 启动脚本时，此行为将被启用。你必须调整上述子进程示例，将 `args.local_rank` 替换为 `os.environ['LOCAL_RANK']`；当你指定此标志时，启动器不会传递 `--local-rank`。
 
-警告
+> 警告
+>
+> `local_rank` 不是全局唯一的：它在机器上的每个进程中是唯一的。因此，不要使用它来决定是否应该执行某些操作，例如写入网络文件系统。参见 https://github.com/pytorch/pytorch/issues/12042 了解如果不正确处理可能会出现的问题。
 
-`local_rank` 不是全局唯一的：它在机器上的每个进程中是唯一的。因此，不要使用它来决定是否应该执行某些操作，例如写入网络文件系统。参见 https://github.com/pytorch/pytorch/issues/12042 了解如果不正确处理可能会出现的问题。
+### [Spawn utility](https://pytorch.org/docs/stable/distributed.html#spawn-utility)
 
-## 生成工具
-
-`torch.multiprocessing` 包还提供了一个生成函数 `torch.multiprocessing.spawn()`。这个辅助函数可以用于生成多个进程。它通过传入你想要运行的函数并生成 N 个进程来运行它。这也可以用于多进程分布式训练。
-
-有关如何使用它的参考，请参阅 PyTorch 示例 - ImageNet 实现。
-
-请注意，此函数需要 Python 3.4 或更高版本。
+`torch.multiprocessing` 包还提供了一个生成函数 `torch.multiprocessing.spawn()`。这个辅助函数可以用于生成多个进程。它通过传入你想要运行的函数并生成 N 个进程来运行它。这也可以用于多进程分布式训练。有关如何使用它的参考，请参阅 [PyTorch 示例 - ImageNet 实现](https://github.com/pytorch/examples/tree/master/imagenet)。
 
 ## 分布式训练
 
