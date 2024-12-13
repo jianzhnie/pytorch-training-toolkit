@@ -115,11 +115,11 @@ def fsdp_main(rank, world_size, args):
         [transforms.ToTensor(),
          transforms.Normalize((0.1307, ), (0.3081, ))])
 
-    dataset1 = datasets.MNIST('../data',
+    dataset1 = datasets.MNIST('./data',
                               train=True,
                               download=True,
                               transform=transform)
-    dataset2 = datasets.MNIST('../data', train=False, transform=transform)
+    dataset2 = datasets.MNIST('./data', train=False, transform=transform)
 
     sampler1 = DistributedSampler(dataset1,
                                   rank=rank,

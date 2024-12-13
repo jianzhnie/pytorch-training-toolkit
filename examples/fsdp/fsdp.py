@@ -133,6 +133,8 @@ class Trainer:
             float: Average training loss for the epoch
         """
         self.model.train()
+        # Set epoch for distributed sampler
+        self.train_loader.sampler.set_epoch(epoch)
         total_loss = 0.0
 
         for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -183,14 +185,19 @@ class Trainer:
                 correct += pred.eq(target.view_as(pred)).sum().item()
 
         # Compute average metrics
-        test_loss /= len(self.test_loader.dataset)
+        # Reduce metrics across all processes
+        metrics = torch.tensor([test_loss, correct], device=self.device)
+        dist.all_reduce(metrics)
+
+        test_loss = metrics[0].item() / len(self.test_loader.dataset)
+        correct = metrics[1].item()
         accuracy = 100.0 * correct / len(self.test_loader.dataset)
 
         if self.rank == 0:
             self.logger.info(
-                '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'
-                .format(test_loss, correct, len(self.test_loader.dataset),
-                        accuracy))
+                f'\nTest set: Average loss: {test_loss:.4f}, '
+                f'Accuracy: {correct}/{len(self.test_loader.dataset)} ({accuracy:.0f}%)\n'
+            )
 
         return {'loss': test_loss, 'accuracy': accuracy}
 
@@ -203,20 +210,24 @@ class Trainer:
             # Train for one epoch and log loss
             epoch_loss = self.run_epoch(epoch)
 
-            # Log epoch loss on primary process (optional)
-            self.logger.info(f'Epoch {epoch}, Train Loss: {epoch_loss:.4f}')
-
+            if self.rank == 0:
+                # Log epoch loss on primary process (optional)
+                self.logger.info(f'Epoch {epoch}, Train Loss: {epoch_loss:.4f}')
+            
+            # Synchronize all processes
+            dist.barrier()
             # Perform testing
             test_metrics = self.test()
 
-            # Log epoch loss on primary process (optional)
-            self.logger.info(f'Epoch {epoch}, Eval Metrics: {test_metrics}')
+            if self.rank == 0:
+                # Log epoch loss on primary process (optional)
+                self.logger.info(f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
             # Step learning rate scheduler
             self.scheduler.step()
 
-        # Optional: Save trained model
-        if self.args.save_model:
+        # Optional: Save trained model on primary process
+        if self.global_rank == 0 and self.args.save_model:
             self.save_checkpoint(self.args.epochs)
 
     def save_checkpoint(self, epoch: int, path: Optional[str] = None) -> str:
@@ -260,7 +271,7 @@ def setup(rank: int, world_size: int) -> None:
     print(f"MASTER_PORT: {os.getenv('MASTER_PORT')}")
 
     os.environ['MASTER_ADDR'] = os.getenv('MASTER_ADDR', 'localhost')
-    os.environ['MASTER_PORT'] = os.getenv('MASTER_PORT', '12355')
+    os.environ['MASTER_PORT'] = os.getenv('MASTER_PORT', '12358')
 
     # Initialize the distributed environment
     try:
@@ -380,6 +391,9 @@ def parse_arguments() -> argparse.Namespace:
                         action='store_true',
                         help='Disable CUDA training')
     parser.add_argument('--seed', type=int, default=1, help='Random seed')
+    parser.add_argument('--dry-run',
+                        action='store_true',
+                        help='Quick training check')
     parser.add_argument('--log-interval',
                         type=int,
                         default=100,
