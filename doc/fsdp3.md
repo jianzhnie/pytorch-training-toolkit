@@ -20,24 +20,6 @@
 
 ## FSDP 的工作原理
 
-在标准的 DDP 训练中，每个工作器处理一个单独的批次，并使用 [all-reduce 操作](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allreduce) 在所有工作器之间对梯度进行求和。虽然 DDP 已经变得非常流行，但它占用了比实际需求更多的 GPU 内存，因为模型权重和优化器状态在所有 DDP 工作器之间是重复的。
-
-减少重复的一种方法是应用一种称为全参数分片的过程，其中只有本地计算所需的模型参数、梯度和优化器的子集是可用的。微软已经推广了这种实现方法，称为 ZeRO-3。
-
-解锁全参数分片的关键见解是，我们可以将 DDP 中的 [all-reduce](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allreduce) 操作分解为单独的 [reduce-scatter](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#reducescatter) 和 [all-gather](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allgather) 操作：
-
-![全分片数据并行图](https://engineering.fb.com/wp-content/uploads/2021/07/FSDP-graph-2a.png?w=1024)
-
-all-reduce 作为 reduce-scatter 和 all-gather 的组合。标准的 all-reduce 操作可以分解为两个独立的阶段：reduce-scatter 和 all-gather。在 reduce-scatter 阶段，梯度根据每个 GPU 的排名索引在 GPU 之间以相等的块进行求和。在 all-gather 阶段，每个 GPU 上可用的聚合梯度的分片部分被提供给所有 GPU（有关这些操作的详细信息，请参见此处）。
-
-我们可以重新排列 reduce-scatter 和 all-gather，使得每个 DDP 工作器只需要存储单个分片的参数和优化器状态。下图展示了标准 DDP 训练（顶部）和 FSDP 训练（底部）的对比：
-
-![全分片数据并行图](https://engineering.fb.com/wp-content/uploads/2021/07/FSDP-Graph-2.png?w=907)
-
-标准数据并行训练与全分片数据并行训练的对比。在标准数据并行训练方法中，每个 GPU 上都有一个模型的副本，并且仅对数据的分片进行一系列前向和后向传播。在这些本地计算之后，每个本地进程的参数和优化器与其它 GPU 共享，以计算全局权重更新。在 FSDP 中，每个 GPU 上只有一个模型的分片。然后，在本地，所有权重通过 all-gather 步骤从其它 GPU 收集，以计算前向传播。在前向传播之后，再次执行权重收集以进行后向传播。在后向传播之后，本地梯度通过 reduce-scatter 步骤在 GPU 之间进行平均和分片，从而使每个 GPU 能够更新其本地权重分片。
-
-为了最大化内存效率，我们可以在每层的前向传播之后丢弃完整权重，为后续层节省内存。这可以通过将 FSDP 包装器应用于网络中的每一层来实现（使用 reshard_after_forward=True）。
-
 伪代码如下：
 
 ```python
