@@ -1,29 +1,27 @@
-# PyTorch 全分片数据并行（FSDP）API 介绍
+# PyTorch 全分片数据并行（FSDP）
 
 ## 动机
 
-最近的研究表明，大规模模型训练将有助于提高模型质量。在过去三年中，模型规模从拥有 1.1 亿参数的 [BERT](https://arxiv.org/abs/1810.04805) 增长到了拥有一万亿参数的 [Megatron-2](https://arxiv.org/abs/2104.04473)，增长了 10,000 倍。随着机器学习 (ML) 模型的规模、大小和参数量的不断增加，ML 从业者发现在自己的硬件上训练甚至加载如此大的模型变得越来越难。 一方面，人们发现大模型与较小的模型相比，学习速度更快 (数据和计算效率更高) 且会有显著的提升 [1]; 另一方面，在大多数硬件上训练此类模型变得令人望而却步。
+最近的研究表明，大规模模型训练将有助于提高模型质量。在过去三年中，模型规模从拥有 1.1 亿参数的 [BERT](https://arxiv.org/abs/1810.04805) 增长到了拥有一万亿参数的 [Megatron-2](https://arxiv.org/abs/2104.04473)，增长了 10,000 倍。随着机器学习 (ML) 模型的规模、大小和参数量的不断增加，ML 从业者发现在自己的硬件上训练甚至加载如此大的模型变得越来越难 [1]。 
 
 除了需要大量的计算和工程资源外，大多数像这样的扩展方法还会引入额外的通信成本，并要求工程师仔细评估内存使用和计算效率之间的权衡。例如，典型的数据并行训练需要在每个 GPU 上维护模型的冗余副本，而模型并行训练会引入额外的通信成本，以在不同 worker（GPU）之间移动激活值。
 
 分布式训练是训练这些机器学习大模型的关键。 **大规模分布式训练** 领域最近取得了不少重大进展，我们将其中一些最突出的进展总结如下:
 
 1. 使用 ZeRO 数据并行 - 零冗余优化器 [2]
-2. 阶段 1: 跨数据并行进程 / GPU 对`优化器状态` 进行分片
-3. 阶段 2: 跨数据并行进程/ GPU 对`优化器状态 + 梯度` 进行分片
-4. 阶段 3: 跨数据并行进程 / GPU 对`优化器状态 + 梯度 + 模型参数` 进行分片
-5. CPU 卸载: 进一步将 ZeRO 阶段 2 的`优化器状态 + 梯度` 卸载到 CPU 上 [3]
-6. 张量并行 [4]: 模型并行的一种形式，通过对各层参数进行精巧的跨加速器 / GPU 分片，在实现并行计算的同时避免了昂贵的通信同步开销。
-7. 流水线并行 [5]: 模型并行的另一种形式，其将模型的不同层放在不同的加速器 / GPU 上，并利用流水线来保持所有加速器同时运行。举个例子，在第 2 个加速器 / GPU 对第 1 个 micro batch 进行计算的同时，第 1 个加速器 / GPU 对第 2 个 micro batch 进行计算。
-8. 3D 并行 [3]: 采用 `ZeRO 数据并行 + 张量并行 + 流水线并行` 的方式来训练数百亿参数的大模型。例如，BigScience 176B 语言模型就采用了该并行方式 [6]。
-
-
+   - 阶段 1: 跨数据并行进程 / GPU 对`优化器状态` 进行分片
+   - 阶段 2: 跨数据并行进程/ GPU 对`优化器状态 + 梯度` 进行分片
+   - 阶段 3: 跨数据并行进程 / GPU 对`优化器状态 + 梯度 + 模型参数` 进行分片
+2. CPU offload: 进一步将 ZeRO 阶段 2 的`优化器状态 + 梯度` offload到 CPU 上 [3]
+3. 张量并行 [4]: 模型并行的一种形式，通过对各层参数进行精巧的跨加速器 / GPU 分片，在实现并行计算的同时避免了昂贵的通信同步开销。
+4. 流水线并行 [5]: 模型并行的另一种形式，其将模型的不同层放在不同的加速器 / GPU 上，并利用流水线来保持所有加速器同时运行。举个例子，在第 2 个加速器 / GPU 对第 1 个 micro batch 进行计算的同时，第 1 个加速器 / GPU 对第 2 个 micro batch 进行计算。
+5. 3D 并行 [3]: 采用 `ZeRO 数据并行 + 张量并行 + 流水线并行` 的方式来训练数百亿参数的大模型。例如，BigScience 176B 语言模型就采用了该并行方式 [6]。
 
 ## FSDP 概念
 
-本文我们主要关注 ZeRO 数据并行，更具体地讲是 PyTorch 最新的完全分片数据并行 (Fully Sharded Data Parallel，FSDP) 功能。 **[DeepSpeed](https://github.com/microsoft/deepspeed)** 和 **[FairScale](https://github.com/facebookresearch/fairscale/)** 实现了 ZeRO 论文的核心思想。DeepSpeed ZeRO 和 FairScale 的全分片数据并行（Fully Sharded Data Parallel, FSDP），通过将模型的参数、梯度和优化器状态分片到数据并行worker上，打破了这一限制，同时仍然保持了数据并行的简单性。最近，PyTorch 已正式将 Fairscale FSDP 整合进其 Distributed 模块中，并增加了更多的优化。
+本文我们主要关注 ZeRO 数据并行，更具体地讲是 PyTorch 最新的完全分片数据并行 (Fully Sharded Data Parallel，FSDP) 功能。 **[DeepSpeed](https://github.com/microsoft/deepspeed)** 和 **[FairScale](https://github.com/facebookresearch/fairscale/)** 实现了 ZeRO 论文的核心思想。DeepSpeed ZeRO 和 FairScale 的全分片数据并行（Fully Sharded Data Parallel, FSDP），通过将模型的参数、梯度和优化器状态分片到数据并行worker上，打破了这一限制，同时仍然保持了数据并行的简单性。PyTorch 已正式将 Fairscale FSDP 整合进其 Distributed 模块中，并增加了更多的优化。
 
-全分片数据并行（Fully Sharded Data Parallel, FSDP）将 AI 模型的参数分片到数据并行 worker上，并可以选择将部分训练计算卸载到 CPU 上。顾名思义，FSDP 是一种数据并行训练算法。尽管参数被分片到不同的 [GPU](https://engineering.fb.com/2018/03/20/ml-applications/the-next-step-in-facebook-s-ai-hardware-infrastructure/) 上，但每个微批次数据的计算仍然在每个 GPU worker本地进行。这种概念上的简单性使得 FSDP 更容易理解和适用于更广泛的使用场景（与层内并行和流水线并行相比）。
+FSDP 将 AI 模型的参数分片到数据并行 worker上，并可以选择将部分训练计算offload到 CPU 上。顾名思义，FSDP 是一种数据并行训练算法。尽管参数被分片到不同的 GPU上，但每个微批次数据的计算仍然在每个 GPU worker 本地进行。这种概念上的简单性使得 FSDP 更容易理解和适用于更广泛的使用场景（与层内并行和流水线并行相比）。
 
 - 与优化器状态+梯度分片数据并行方法相比，FSDP 将模型参数、梯度和优化器状态更均匀地分片到 GPU 上来提高内存效率
 - 并通过在训练期间分解通信并将其与前向和后向传播重叠来提高计算效率，实现更好的性能。
@@ -36,7 +34,7 @@ FSDP 产生的结果与标准分布式数据并行（DDP）训练相同，并且
 
 在标准的 DDP 训练中，每个worker处理一个单独的批次，并使用 [all-reduce 操作](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allreduce) 在所有worker之间对梯度进行求和。虽然 DDP 已经变得非常流行，但它占用了比实际需求更多的 GPU 内存，因为模型权重和优化器状态在所有 DDP worker之间是重复的。
 
-减少重复的一种方法是应用一种称为全参数分片的过程，其中只有本地计算所需的模型参数、梯度和优化器的子集是可用的。微软推广了这种实现方法，称为 ZeRO-3。
+减少重复的一种方法是应用一种称为全参数分片的过程，其中只有本地只存储计算所需的模型参数、梯度和优化器的子集的一个分片。微软推广了这种实现方法，称为 ZeRO-3。
 
 解锁全参数分片的关键见解是，我们可以将 DDP 中的 [all-reduce](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allreduce) 操作分解为单独的 [reduce-scatter](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#reducescatter) 和 [all-gather](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allgather) 操作：
 
@@ -57,9 +55,9 @@ FSDP 产生的结果与标准分布式数据并行（DDP）训练相同，并且
 
 在标准数据并行 DDP  训练方法中，每个 worker (加速器 / GPU)  上都会保留一份模型的所有参数、梯度和优化器状态的副本，并且仅对数据的分片进行一系列前向和后向传播。每个 worker 会获取不同的数据，这些数据会经过前向传播，计算损失，然后再反向传播以生成梯度。接着，执行 all-reduce 操作，此时每个worker 从其余 worker 获取梯度并取平均。这样一轮下来，每个worker上的梯度都是相同的，且都是全局梯度，接着优化器再用这些梯度来更新模型参数。我们可以看到，每个 GPU 上都保留完整副本会消耗大量的显存，这限制了该方法所能支持的 batch size 以及模型尺寸。
 
-在 FSDP 中， FSDP 将所有这些状态分片到数据并行 worker上， 每个 GPU 上只有一个模型的分片，并可以选择将分片的模型参数offload 到 CPU 上。然后，在本地，所有权重通过 all-gather 步骤从其它 GPU 收集，以计算前向传播。在前向传播之后，再次执行权重收集以进行后向传播。在后向传播之后，本地梯度通过 reduce-scatter 步骤在 GPU 之间进行平均和分片，从而使每个 GPU 能够更新其本地权重分片。
+在 FSDP 中， FSDP 将所有这些优化器状态、梯度和模型参数分片到数据并行 worker上， 每个 加速器/ GPU 上只存储一个模型的分片，进一步地，还可以通过将这些张量 offload 到 CPU 内存来支持那些 GPU 显存容纳不下的大模型。
 
-FSDP 通过让各数据并行worker分片存储优化器状态、梯度和模型参数来解决这个问题。进一步地，还可以通过将这些张量卸载到 CPU 内存来支持那些 GPU 显存容纳不下的大模型。在具体运行时，与 DDP 类似，FSDP 的每个worker获取不同的数据。在前向传播过程中，如果启用了 CPU 卸载，则首先将本地分片的参数搬到 GPU/加速器。然后，每个worker对给定的 FSDP 包装模块/层执行 all-gather 操作以获取所需的参数，执行计算，然后释放/清空其他worker的参数分片。在对所有 FSDP 模块全部执行该操作后就是计算损失，然后是后向传播。在后向传播期间，再次执行 all-gather 操作以获取给定 FSDP 模块所需的所有参数，执行计算以获得局部梯度，然后再次释放其他worker的分片。最后，使用 reduce-scatter 操作对局部梯度进行平均并将相应分片给对应的worker，该操作使得每个worker都可以更新其本地分片的参数。如果启用了 CPU 卸载的话，梯度会传给 CPU，以便直接在 CPU 上更新参数。
+然后，在具体运行时，与 DDP 类似，FSDP 的每个 worker 获取不同的数据。在前向传播过程中，如果启用了 CPU offload，则首先将本地分片的参数搬到 GPU/加速器。然后，每个 worker 对给定的 FSDP 包装模块/层执行 all-gather 操作其它 GPU 收集所需的参数，执行前向计算，然后释放/清空其他worker的参数分片。在对所有 FSDP 模块全部执行该操作后就是计算损失，然后是后向传播。在后向传播期间，再次执行 all-gather 操作以获取给定 FSDP 模块所需的所有参数，执行计算以获得局部梯度，然后再次释放其他worker的分片。最后，使用 reduce-scatter 操作对局部梯度进行平均并将相应分片给对应的worker，该操作使得每个worker都可以更新其本地分片的参数。如果启用了 CPU offload的话，梯度会传给 CPU，以便直接在 CPU 上更新参数。
 
 为了最大化内存效率，我们可以在每层的前向传播之后丢弃完整权重，为后续层节省内存。这可以通过将 FSDP 包装器应用于网络中的每一层来实现（使用 reshard_after_forward=True）。
 
@@ -69,7 +67,7 @@ FSDP 通过让各数据并行worker分片存储优化器状态、梯度和模型
 
 > 图 3. FSDP 工作流程
 
-通常，模型层以嵌套方式包装在 FSDP 中，因此只有单个 FSDP 实例中的层需要在正向或反向计算期间将完整参数收集到单个设备上。收集的完整参数将在计算后立即释放，释放的内存可用于下一层的计算。通过这种方式，可以节省峰值 GPU 内存，从而使训练能够扩展到使用更大的模型规模或更大的批量大小。为了进一步最大化内存效率，FSDP 可以在实例不活跃于计算时将参数、梯度和优化器状态offload 到 CPU。
+通常，模型层以嵌套方式包装在 FSDP 中，因此只有单个 FSDP 实例中的层需要在正向或反向计算期间将完整参数收集到单个设备上。收集的完整参数将在计算后立即释放，释放的内存可用于下一层的计算。通过这种方式，可以节省峰值 GPU 内存，从而使训练能够扩展到使用更大的模型规模或更大的批量大小。为了进一步最大化内存效率，FSDP 可以在实例不活跃于计算时将参数、梯度和优化器状态 offload 到 CPU。
 
 伪代码如下：
 
@@ -96,7 +94,7 @@ FSDP backward pass:
 
 模型层应以嵌套方式包装在 FSDP 中，以节省峰值内存并启用通信和计算重叠。最简单的方法是自动包装，它可以作为 DDP 的即插即用替换，而无需更改其余代码。
 
-`fsdp_auto_wrap_policy` 参数允许指定一个可调用函数，以递归方式将层包装在 FSDP 中。PyTorch FSDP 提供的 `default_auto_wrap_policy` 函数递归地包装参数数量大于 1 亿层的层。您可以根据需要提供自己的包装策略。自定义包装策略的示例显示在 [FSDP API 文档](https://pytorch.org/docs/stable/fsdp.html) 中。
+`fsdp_auto_wrap_policy` 参数允许指定一个可调用函数，以递归方式将层包装在 FSDP 中。PyTorch FSDP 提供的 `default_auto_wrap_policy` 函数递归地包装参数数量大于 1 亿的层。您可以根据需要提供自己的包装策略。自定义包装策略的示例显示在 [FSDP API 文档](https://pytorch.org/docs/stable/fsdp.html) 中。
 
 此外，可以选择配置 `cpu_offload`，以在计算中不使用这些参数时将包装的参数offload 到 CPU。这可以进一步提高内存效率，但代价是主机和设备之间的数据传输开销。
 
@@ -169,7 +167,7 @@ for sample, label in next_batch():
 
 
 
-## PyTorch FSDP 对比 DDP 实例
+##  FSDP 对比 DDP 实例
 
 我们以基于 GPT-2 的 Large (762M) 和 XL (1.5B) 模型的因果语言建模任务为例。
 
@@ -197,8 +195,6 @@ num_processes: 2
 use_cpu: false
 ```
 
-
-
 ### 多 GPU FSDP
 
 本文我们使用单节点多 GPU 上作为实验平台。我们比较了分布式数据并行 (DDP) 和 FSDP 在各种不同配置下的性能。我们可以看到，对 GPT-2 Large(762M) 模型而言，DDP 尚能够支持其中某些 batch size 而不会引起内存不足 (OOM) 错误。但当使用 GPT-2 XL (1.5B) 时，即使 batch size 为 1，DDP 也会失败并出现 OOM 错误。同时，我们看到，FSDP 可以支持以更大的 batch size 训练 GPT-2 Large 模型，同时它还可以使用较大的 batch size 训练 DDP 训练不了的 GPT-2 XL 模型。
@@ -221,27 +217,27 @@ time accelerate launch run_clm_no_trainer.py \
 --block_size 12
 ```
 
-
-
 FSDP 运行截屏:
 
 ![FSDP 运行截屏](https://huggingface.co/blog/assets/62_pytorch_fsdp/sample_fsdp_run.png)
 
-|                         并行方法                         | 最大 Batch Size ($BS) | 大致训练时间 (分钟) | 备注 |
-| :------------------------------------------------------: | :-------------------: | :-----------------: | :--: |
-|                           DDP                            |           7           |         15          |      |
-|                        DDP + FP16                        |           7           |          8          |      |
-|                FSDP (配置: SHARD_GRAD_OP)                |          11           |         11          |      |
-|      FSDP (配置: min_num_params = 1M + FULL_SHARD)       |          15           |         12          |      |
-|      FSDP (配置: min_num_params = 2K + FULL_SHARD)       |          15           |         13          |      |
-| FSDP (配置: min_num_params = 1M + FULL_SHARD + CPU 卸载) |          20           |         23          |      |
-| FSDP (配置: min_num_params = 2K + FULL_SHARD + CPU 卸载) |          22           |         24          |      |
+
 
 表 1: GPT-2 Large (762M) 模型 FSDP 训练性能基准测试
 
-从表 1 中我们可以看到，相对于 DDP 而言，FSDP **支持更大的 batch size**，在不使用和使用 CPU 卸载设置的情况下 FSDP 支持的最大 batch size 分别可达 DDP 的 **2 倍及 3 倍**。从训练时间来看，混合精度的 DDP 最快，其后是分别使用 ZeRO 阶段 2 和阶段 3 的 FSDP。由于因果语言建模的任务的上下文序列长度 ( `--block_size` ) 是固定的，因此 FSDP 在训练时间上加速还不是太高。对于动态 batch size 的应用而言，支持更大 batch size 的 FSDP 可能会在训练时间方面有更大的加速。目前，FSDP 的混合精度支持在 `transformers` 上还存在一些 [问题](https://github.com/pytorch/pytorch/issues/75676)。一旦问题解决，训练时间将会进一步显著缩短。
+| 并行方法                                                    | 最大 Batch Size ($BS) | 大致训练时间 (分钟) |
+| :---------------------------------------------------------- | :-------------------: | :-----------------: |
+| DDP                                                         |           7           |         15          |
+| DDP + FP16                                                  |           7           |          8          |
+| FSDP (配置: SHARD_GRAD_OP)                                  |          11           |         11          |
+| FSDP (配置: min_num_params = 1M + FULL_SHARD)               |          15           |         12          |
+| FSDP (配置: min_num_params = 2K + FULL_SHARD)               |          15           |         13          |
+| FSDP (配置: min_num_params = 1M + FULL_SHARD + CPU offload) |          20           |         23          |
+| FSDP (配置: min_num_params = 2K + FULL_SHARD + CPU offload) |          22           |         24          |
 
-### 使用 CPU 卸载来支持放不进 GPU 显存的大模型训练
+从表 1 中我们可以看到，相对于 DDP 而言，FSDP **支持更大的 batch size**，在不使用和使用 CPU offload设置的情况下 FSDP 支持的最大 batch size 分别可达 DDP 的 **2 倍及 3 倍**。从训练时间来看，混合精度的 DDP 最快，其后是分别使用 ZeRO 阶段 2 和阶段 3 的 FSDP。由于因果语言建模的任务的上下文序列长度 ( `--block_size` ) 是固定的，因此 FSDP 在训练时间上加速还不是太高。对于动态 batch size 的应用而言，支持更大 batch size 的 FSDP 可能会在训练时间方面有更大的加速。目前，FSDP 的混合精度支持在 `transformers` 上还存在一些 [问题](https://github.com/pytorch/pytorch/issues/75676)。一旦问题解决，训练时间将会进一步显著缩短。
+
+### 使用 CPU offload来支持放不进 GPU 显存的大模型训练
 
 训练 GPT-2 XL (1.5B) 模型的命令如下:
 
@@ -261,18 +257,20 @@ time accelerate launch run_clm_no_trainer.py \
 
 
 
-|                  并行方法                   | 最大 Batch Size ($BS) | GPU 数 | 大致训练时间 (小时) |                             备注                             |
-| :-----------------------------------------: | :-------------------: | :----: | :-----------------: | :----------------------------------------------------------: |
-|                     DDP                     |           1           |   1    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
-|                     DDP                     |           1           |   2    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
-|                 DDP + FP16                  |           1           |   1    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
-|      FSDP (配置: min_num_params = 2K)       |           5           |   2    |         0.6         |                                                              |
-| FSDP (配置: min_num_params = 2K + CPU 卸载) |          10           |   1    |          3          |                                                              |
-| FSDP (配置: min_num_params = 2K + CPU 卸载) |          14           |   2    |        1.16         |                                                              |
+> 表 2: GPT-2 XL (1.5B) 模型上的 FSDP 基准测试
 
-表 2: GPT-2 XL (1.5B) 模型上的 FSDP 基准测试
+|                    并行方法                    | 最大 Batch Size ($BS) | GPU 数 | 大致训练时间 (小时) |                             备注                             |
+| :--------------------------------------------: | :-------------------: | :----: | :-----------------: | :----------------------------------------------------------: |
+|                      DDP                       |           1           |   1    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
+|                      DDP                       |           1           |   2    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
+|                   DDP + FP16                   |           1           |   1    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
+|        FSDP (配置: min_num_params = 2K)        |           5           |   2    |         0.6         |                                                              |
+| FSDP (配置: min_num_params = 2K + CPU offload) |          10           |   1    |          3          |                                                              |
+| FSDP (配置: min_num_params = 2K + CPU offload) |          14           |   2    |        1.16         |                                                              |
 
-从表 2 中，我们可以观察到 DDP (带和不带 fp16) 甚至在 batch size 为 1 的情况下就会出现 CUDA OOM 错误，从而无法运行。而开启了 ZeRO- 阶段 3 的 FSDP 能够以 batch size 为 5 (总 batch size = 10 (5 ×× 2) ) 在 2 个 GPU 上运行。当使用 2 个 GPU 时，开启了 CPU 卸载的 FSDP 还能将最大 batch size 进一步增加到每 GPU 14。 **开启了 CPU 卸载的 FSDP 可以在单个 GPU 上训练 GPT-2 1.5B 模型，batch size 为 10**。这使得机器学习从业者能够用最少的计算资源来训练大模型，从而助力大模型训练民主化。
+
+
+从表 2 中，我们可以观察到 DDP (带和不带 fp16) 甚至在 batch size 为 1 的情况下就会出现 CUDA OOM 错误，从而无法运行。而开启了 ZeRO- 阶段 3 的 FSDP 能够以 batch size 为 5 (总 batch size = 10 (5 × 2) ) 在 2 个 GPU 上运行。当使用 2 个 GPU 时，开启了 CPU offload的 FSDP 还能将最大 batch size 进一步增加到每 GPU 14。 **开启了 CPU offload的 FSDP 可以在单个 GPU 上训练 GPT-2 1.5B 模型，batch size 为 10**。这使得机器学习从业者能够用最少的计算资源来训练大模型，从而助力大模型训练民主化。
 
 ## 基准测试结果
 
@@ -307,7 +305,7 @@ GPT 模型使用 [minGPT](https://github.com/karpathy/minGPT) 实现。随机生
 
 1. **分片策略**: [1] FULL_SHARD, [2] SHARD_GRAD_OP
 2. **Min Num Params**: FSDP 默认自动包装的最小参数量。
-3. **Offload Params**: 是否将参数和梯度卸载到 CPU。
+3. **Offload Params**: 是否将参数和梯度offload到 CPU。
 
 如果想要对更多的控制参数进行配置，用户可以利用 `FullyShardedDataParallelPlugin` ，其可以指定 `auto_wrap_policy` 、 `backward_prefetch` 以及 `ignored_modules` 。
 
