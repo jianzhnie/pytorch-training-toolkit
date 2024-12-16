@@ -212,8 +212,9 @@ class Trainer:
 
             if self.rank == 0:
                 # Log epoch loss on primary process (optional)
-                self.logger.info(f'Epoch {epoch}, Train Loss: {epoch_loss:.4f}')
-            
+                self.logger.info(
+                    f'Epoch {epoch}, Train Loss: {epoch_loss:.4f}')
+
             # Synchronize all processes
             dist.barrier()
             # Perform testing
@@ -221,13 +222,14 @@ class Trainer:
 
             if self.rank == 0:
                 # Log epoch loss on primary process (optional)
-                self.logger.info(f'Epoch {epoch}, Eval Metrics: {test_metrics}')
+                self.logger.info(
+                    f'Epoch {epoch}, Eval Metrics: {test_metrics}')
 
             # Step learning rate scheduler
             self.scheduler.step()
 
         # Optional: Save trained model on primary process
-        if self.global_rank == 0 and self.args.save_model:
+        if self.rank == 0 and self.args.save_model:
             self.save_checkpoint(self.args.epochs)
 
     def save_checkpoint(self, epoch: int, path: Optional[str] = None) -> str:

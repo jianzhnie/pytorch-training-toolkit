@@ -19,8 +19,7 @@ from torchvision import datasets, transforms
 sys.path.append(os.getcwd())
 
 # Import distributed utilities
-from scaletorch.utils.dist_utils import (ddp_cleanup, ddp_setup,
-                                         system_diagnostic)
+from scaletorch.utils.torch_dist import ddp_cleanup, ddp_setup, get_system_info
 
 # Configure global logger
 logging.basicConfig(
@@ -377,7 +376,7 @@ def main() -> None:
     Manages distributed setup, training initialization, and execution.
     """
     # Initial system diagnostic
-    system_diagnostic()
+    get_system_info()
 
     # Parse command-line arguments
     args = parse_arguments()

@@ -15,4 +15,4 @@ python examples/imagenet/dist_train.py -a resnet18 --dummy \
 torchrun examples/imagenet/dist_train.py -a resnet18 --dummy \
     --dist-url 'tcp://127.0.0.1:29501' \
     --dist-backend 'nccl' \
-    --batch-size 128 
+    --batch-size 128

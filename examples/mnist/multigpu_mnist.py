@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import datasets, transforms
 
 sys.path.append(os.getcwd())
-from scaletorch.utils.dist_utils import system_diagnostic
+from scaletorch.utils.env_utils import get_system_info
 
 
 class DistributedTrainer:
@@ -423,7 +423,7 @@ def main() -> None:
     """Main function to launch distributed training."""
     # Parse arguments
     # 在脚本开始处调用
-    system_diagnostic()
+    get_system_info()
 
     args = parse_arguments()
     torch.backends.cudnn.benchmark = True
