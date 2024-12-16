@@ -340,6 +340,7 @@ if __name__ == '__main__':
 ```
 
 启动命令：
+
 - Multiprocessing-distributed：`python train.py`
 - Torchrun：`torchrun --nproc_per_node=4 train.py`
 
@@ -382,18 +383,22 @@ device = torch.device(f'cuda:{local_rank}')
 ```
 
 典型场景：
+
 - 单机4卡机器：
+
   - `world_size` = 4
   - `rank` 可能是 0, 1, 2, 3
   - `local_rank` 也是 0, 1, 2, 3
   - 每个进程使用对应编号的 GPU
 
 - 2台机器各4卡：
+
   - 第一台机器：`rank` 0-3, `local_rank` 0-3
   - 第二台机器：`rank` 4-7, `local_rank` 0-3
   - 确保每台机器的 `local_rank` 从 0 开始
 
 Torchrun 启动命令会自动设置这些环境变量：
+
 ```bash
 torchrun --nproc_per_node=4 train.py
 ```
