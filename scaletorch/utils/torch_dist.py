@@ -5,7 +5,8 @@ from typing import List, Optional
 
 import torch
 import torch.distributed as dist
-from transformers.utils import (is_torch_cuda_available,
+from transformers.utils import (is_accelerate_available, is_ipex_available,
+                                is_torch_cuda_available,
                                 is_torch_mps_available, is_torch_npu_available,
                                 is_torch_xpu_available)
 
@@ -39,6 +40,33 @@ def validate_distributed_setup() -> bool:
     return True
 
 
+def get_device() -> torch.device:
+    """Retrieve PyTorch device. It checks that the requested device is
+    available first. For now, it supports cpu and cuda, xpu, npu. By default,
+    it tries to use the gpu.
+
+    :param device: One for 'auto', 'cuda', 'cpu'
+    :return: Supported Pytorch device
+    """
+    if is_torch_xpu_available():
+        if not is_ipex_available() and not is_accelerate_available(
+                '0.32.0.dev'):
+            raise ImportError(
+                'Using the XPU PyTorch backend requires `accelerate>=0.32.0.dev`'
+            )
+        device = torch.device('xpu:0')
+        torch.xpu.set_device(device)
+    elif is_torch_npu_available():
+        device = torch.device('npu:0')
+        torch.npu.set_device(device)
+    elif torch.cuda.is_available():
+        device = torch.device('cuda:0')
+        torch.cuda.set_device(device)
+    else:
+        device = torch.device('cpu')
+    return device
+
+
 def get_current_device() -> 'torch.device':
     r"""
     Gets the current available device.
@@ -62,11 +90,14 @@ def get_device_count() -> int:
     Gets the number of available GPU or NPU devices.
     """
     if is_torch_npu_available():
-        return torch.npu.device_count()
+        num_devices = torch.npu.device_count()
+    if is_torch_xpu_available():
+        num_devices = torch.xpu.device_count()
     elif is_torch_cuda_available():
-        return torch.cuda.device_count()
+        num_devices = torch.cuda.device_count()
     else:
-        return 0
+        num_devices = 0
+    return num_devices
 
 
 def setup_distributed_environment(
@@ -167,7 +198,7 @@ def setup_distributed_environment(
         raise RuntimeError(f'Distributed setup failed: {e}')
 
 
-def cleanup_ddp_env() -> None:
+def cleanup_distribute_environment() -> None:
     """Safely clean up the distributed environment.
 
     This function will attempt to destroy the distributed process group and
