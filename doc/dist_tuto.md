@@ -2,9 +2,9 @@
 
 `torch.distributed`包的底层通信主要使用 Collective Communication (c10d) library 来支持跨组内的进程发送张量，并主要支持两种类型的通信 API：
 
-- collective communication APIs: 
+- collective communication APIs:
   - Distributed Data-Parallel Training (DDP)
-- P2P communication APIs: 
+- P2P communication APIs:
   - RPC-Based Distributed Training (RPC)
 
 这两种通信 API 在 PyTorch 中分别对应了两种分布式训练方式：Distributed Data-Parallel Training (DDP) 和 RPC-Based Distributed Training (RPC)。 本教程着重探讨 Distributed Data-Parallel Training (DDP) 的通信方式和 API，我们将了解如何设置分布式环境，使用不同的通信策略，并深入了解该包的一些内部机制。
@@ -168,14 +168,14 @@ if __name__ == "__main__":
 
 - 如果没有指定，则假定 `init_method` 为 `“env://”`。
 
-核心参数: 
+核心参数:
 
 - **backend** ([*str*](https://docs.python.org/3/library/stdtypes.html#str) *or* [*Backend*](https://pytorch.org/docs/main/distributed.html#torch.distributed.Backend)*,* *optional*) – 要使用的后端。根据构建时配置，有效值包括 `mpi`、`gloo`、`nccl` 和 `ucc`。如果未提供后端，则将创建 `gloo` 和 `nccl` 后端.
 - **init_method** ([*str*](https://docs.python.org/3/library/stdtypes.html#str)*,* *optional*) – 指定如何初始化进程组的 URL。如果未指定 `init_method` 或 `store`，则默认为“env://”。与 `store` 互斥。
 - **world_size** ([*int*](https://docs.python.org/3/library/functions.html#int)*,* *optional*) – 参与作业的进程数。如果指定了 `store`，则为必需。
 - **rank** ([*int*](https://docs.python.org/3/library/functions.html#int)*,* *optional*) – 当前进程的rank（它应该是一个介于 0 和 `world_size`-1 之间的数字）。如果指定了 `store`，则为必需。
 - **store** ([*Store*](https://pytorch.org/docs/main/distributed.html#torch.distributed.Store)*,* *optional*) – 所有进程可访问的键/值存储，用于交换连接/地址信息。与 `init_method` 互斥。
-- **timeout** (*timedelta**,* *optional*) – 针对进程组执行操作的超时时间。默认值为 NCCL 为 10 分钟，其他后端为 30 分钟。这是在异步取消集合运算并使进程崩溃后的持续时间。这样做是因为 CUDA 执行是异步的，继续执行用户代码不再安全，因为失败的异步 NCCL 操作可能会导致后续 CUDA 操作在损坏的数据上运行。当设置 TORCH_NCCL_BLOCKING_WAIT 时，进程将阻塞并等待此超时。
+- **timeout** (*timedelta*\*,\* *optional*) – 针对进程组执行操作的超时时间。默认值为 NCCL 为 10 分钟，其他后端为 30 分钟。这是在异步取消集合运算并使进程崩溃后的持续时间。这样做是因为 CUDA 执行是异步的，继续执行用户代码不再安全，因为失败的异步 NCCL 操作可能会导致后续 CUDA 操作在损坏的数据上运行。当设置 TORCH_NCCL_BLOCKING_WAIT 时，进程将阻塞并等待此超时。
 
 #### `distributed.is_initialized()`
 
@@ -196,7 +196,9 @@ Pytorch 分布式初始化需要调用函数：`dist.init_process_group(backend,
 - `MASTER_ADDR`：主进程所在机器的IP地址。
 
 - `MASTER_PORT`：主进程所在机器上的一个空闲端口。
+
 - `WORLD_SIZE`： 总进程数，以便主进程知道要等待多少个工作进程。
+
 - `RANK`：每个进程的秩，以便它们知道它是否是主进程或工作进程。
 
 rank 0 的机器将用于设置所有连接。
@@ -322,7 +324,7 @@ def run(rank, size):
 
 然而，在执行了`req.wait()`之后，我们可以保证通信已经发生，并且存储在`tensor[0]`中的值是1.0。
 
-##  进程组间通信
+## 进程组间通信
 
 - [`broadcast()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.broadcast)
 - [`reduce()`](https://pytorch.org/docs/main/distributed.html#torch.distributed.reduce)
@@ -393,7 +395,7 @@ def run(rank, size):
 
 #### distributed.scatter
 
-distributed.scatter(tensor, scatter_list=None, src=0, group=None, async_op=False)： 将张量 scatter_list[i] 复制第 i 个进程的过程。 例如，在实现分布式训练时，我们将数据分成四份并分别发送到不同的机子上计算梯度。scatter 函数可以用来将信息从 src 进程发送到其他进程上。
+distributed.scatter(tensor, scatter_list=None, src=0, group=None, async_op=False)： 将张量 scatter_list\[i\] 复制第 i 个进程的过程。 例如，在实现分布式训练时，我们将数据分成四份并分别发送到不同的机子上计算梯度。scatter 函数可以用来将信息从 src 进程发送到其他进程上。
 
 <img src="https://pytorch.org/tutorials/_images/scatter.png" alt="Scatter" style="zoom:50%;" />
 
@@ -423,15 +425,11 @@ distributed.reduce(tensor, dst, op, group)：将 op 应用于所有 tensor，并
 
 <img src="https://pytorch.org/tutorials/_images/reduce.png" alt="减少" style="zoom:50%;" />
 
-
-
 #### distributed.all_reduce
 
 distributed.all_reduce(tensor, op, group)： 与 reduce 相同，但是结果存储在所有进程中。
 
 <img src="https://pytorch.org/tutorials/_images/all_reduce.png" alt="全归约" style="zoom:50%;" />
-
-
 
 #### distributed.broadcast
 
@@ -455,9 +453,9 @@ distributed.all_gather(tensor_list, tensor, group)：将所有进程中的 tenso
 
 **异步操作** - 当 `async_op` 设置为 `True` 时。集合运算函数返回一个分布式请求对象。通常，你不需要手动创建它，并且它保证支持两种方法：
 
-* `is_completed()` - 对于 CPU 集合运算，如果操作已完成，则返回 `True`。对于 CUDA 操作，如果操作已成功排队到 CUDA 流，并且输出可以在默认流上使用而无需进一步同步，则返回 `True`。
-* `wait()` - 对于 CPU 集合运算，将阻塞进程直到操作完成。对于 CUDA 集合运算，将阻塞直到操作已成功排队到 CUDA 流，并且输出可以在默认流上使用而无需进一步同步。
-* `get_future()` - 返回 `torch._C.Future` 对象。支持 NCCL，也支持 GLOO 和 MPI 上的大多数操作，除了点对点操作。注意：随着我们继续采用 Futures 并合并 API，`get_future()` 调用可能会变得冗余。
+- `is_completed()` - 对于 CPU 集合运算，如果操作已完成，则返回 `True`。对于 CUDA 操作，如果操作已成功排队到 CUDA 流，并且输出可以在默认流上使用而无需进一步同步，则返回 `True`。
+- `wait()` - 对于 CPU 集合运算，将阻塞进程直到操作完成。对于 CUDA 集合运算，将阻塞直到操作已成功排队到 CUDA 流，并且输出可以在默认流上使用而无需进一步同步。
+- `get_future()` - 返回 `torch._C.Future` 对象。支持 NCCL，也支持 GLOO 和 MPI 上的大多数操作，除了点对点操作。注意：随着我们继续采用 Futures 并合并 API，`get_future()` 调用可能会变得冗余。
 
 **示例**
 

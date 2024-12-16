@@ -2,22 +2,20 @@
 
 ## 动机
 
-最近的研究表明，大规模模型训练将有助于提高模型质量。在过去三年中，模型规模从拥有 1.1 亿参数的 [BERT](https://arxiv.org/abs/1810.04805) 增长到了拥有一万亿参数的 [Megatron-2](https://arxiv.org/abs/2104.04473)，增长了 10,000 倍。随着机器学习 (ML) 模型的规模、大小和参数量的不断增加，ML 从业者发现在自己的硬件上训练甚至加载如此大的模型变得越来越难。 一方面，人们发现大模型与较小的模型相比，学习速度更快 (数据和计算效率更高) 且会有显著的提升 [1]; 另一方面，在大多数硬件上训练此类模型变得令人望而却步。
+最近的研究表明，大规模模型训练将有助于提高模型质量。在过去三年中，模型规模从拥有 1.1 亿参数的 [BERT](https://arxiv.org/abs/1810.04805) 增长到了拥有一万亿参数的 [Megatron-2](https://arxiv.org/abs/2104.04473)，增长了 10,000 倍。随着机器学习 (ML) 模型的规模、大小和参数量的不断增加，ML 从业者发现在自己的硬件上训练甚至加载如此大的模型变得越来越难。 一方面，人们发现大模型与较小的模型相比，学习速度更快 (数据和计算效率更高) 且会有显著的提升 \[1\]; 另一方面，在大多数硬件上训练此类模型变得令人望而却步。
 
 除了需要大量的计算和工程资源外，大多数像这样的扩展方法还会引入额外的通信成本，并要求工程师仔细评估内存使用和计算效率之间的权衡。例如，典型的数据并行训练需要在每个 GPU 上维护模型的冗余副本，而模型并行训练会引入额外的通信成本，以在不同 worker（GPU）之间移动激活值。
 
 分布式训练是训练这些机器学习大模型的关键。 **大规模分布式训练** 领域最近取得了不少重大进展，我们将其中一些最突出的进展总结如下:
 
-1. 使用 ZeRO 数据并行 - 零冗余优化器 [2]
+1. 使用 ZeRO 数据并行 - 零冗余优化器 \[2\]
 2. 阶段 1: 跨数据并行进程 / GPU 对`优化器状态` 进行分片
 3. 阶段 2: 跨数据并行进程/ GPU 对`优化器状态 + 梯度` 进行分片
 4. 阶段 3: 跨数据并行进程 / GPU 对`优化器状态 + 梯度 + 模型参数` 进行分片
-5. CPU 卸载: 进一步将 ZeRO 阶段 2 的`优化器状态 + 梯度` 卸载到 CPU 上 [3]
-6. 张量并行 [4]: 模型并行的一种形式，通过对各层参数进行精巧的跨加速器 / GPU 分片，在实现并行计算的同时避免了昂贵的通信同步开销。
-7. 流水线并行 [5]: 模型并行的另一种形式，其将模型的不同层放在不同的加速器 / GPU 上，并利用流水线来保持所有加速器同时运行。举个例子，在第 2 个加速器 / GPU 对第 1 个 micro batch 进行计算的同时，第 1 个加速器 / GPU 对第 2 个 micro batch 进行计算。
-8. 3D 并行 [3]: 采用 `ZeRO 数据并行 + 张量并行 + 流水线并行` 的方式来训练数百亿参数的大模型。例如，BigScience 176B 语言模型就采用了该并行方式 [6]。
-
-
+5. CPU 卸载: 进一步将 ZeRO 阶段 2 的`优化器状态 + 梯度` 卸载到 CPU 上 \[3\]
+6. 张量并行 \[4\]: 模型并行的一种形式，通过对各层参数进行精巧的跨加速器 / GPU 分片，在实现并行计算的同时避免了昂贵的通信同步开销。
+7. 流水线并行 \[5\]: 模型并行的另一种形式，其将模型的不同层放在不同的加速器 / GPU 上，并利用流水线来保持所有加速器同时运行。举个例子，在第 2 个加速器 / GPU 对第 1 个 micro batch 进行计算的同时，第 1 个加速器 / GPU 对第 2 个 micro batch 进行计算。
+8. 3D 并行 \[3\]: 采用 `ZeRO 数据并行 + 张量并行 + 流水线并行` 的方式来训练数百亿参数的大模型。例如，BigScience 176B 语言模型就采用了该并行方式 \[6\]。
 
 ## FSDP 概念
 
@@ -111,14 +109,14 @@ from torch.distributed.fsdp.wrap import (
    default_auto_wrap_policy,
 )
 import torch.nn as nn
- 
+
 class model(nn.Module):
    def __init__(self):
        super().__init__()
        self.layer1 = nn.Linear(8, 4)
        self.layer2 = nn.Linear(4, 16)
        self.layer3 = nn.Linear(16, 4)
- 
+
 model = DistributedDataParallel(model())
 fsdp_model = FullyShardedDataParallel(
    model(),
@@ -142,15 +140,15 @@ from torch.distributed.fsdp.wrap import (
 )
 import torch.nn as nn
 from typing import Dict
- 
- 
+
+
 class model(nn.Module):
    def __init__(self):
        super().__init__()
        self.layer1 = wrap(nn.Linear(8, 4))
        self.layer2 = nn.Linear(4, 16)
        self.layer3 = wrap(nn.Linear(16, 4))
- 
+
 wrapper_kwargs = Dict(cpu_offload=CPUOffload(offload_params=True))
 with enable_wrap(wrapper_cls=FullyShardedDataParallel, **wrapper_kwargs):
    fsdp_model = wrap(model())
@@ -166,8 +164,6 @@ for sample, label in next_batch():
   loss.backward()
   optim.step()
 ```
-
-
 
 ## PyTorch FSDP 对比 DDP 实例
 
@@ -197,8 +193,6 @@ num_processes: 2
 use_cpu: false
 ```
 
-
-
 ### 多 GPU FSDP
 
 本文我们使用单节点多 GPU 上作为实验平台。我们比较了分布式数据并行 (DDP) 和 FSDP 在各种不同配置下的性能。我们可以看到，对 GPT-2 Large(762M) 模型而言，DDP 尚能够支持其中某些 batch size 而不会引起内存不足 (OOM) 错误。但当使用 GPT-2 XL (1.5B) 时，即使 batch size 为 1，DDP 也会失败并出现 OOM 错误。同时，我们看到，FSDP 可以支持以更大的 batch size 训练 GPT-2 Large 模型，同时它还可以使用较大的 batch size 训练 DDP 训练不了的 GPT-2 XL 模型。
@@ -220,8 +214,6 @@ time accelerate launch run_clm_no_trainer.py \
 --num_train_epochs 1
 --block_size 12
 ```
-
-
 
 FSDP 运行截屏:
 
@@ -259,16 +251,14 @@ time accelerate launch run_clm_no_trainer.py \
 --block_size 12
 ```
 
-
-
-|                  并行方法                   | 最大 Batch Size ($BS) | GPU 数 | 大致训练时间 (小时) |                             备注                             |
-| :-----------------------------------------: | :-------------------: | :----: | :-----------------: | :----------------------------------------------------------: |
+|                  并行方法                   | 最大 Batch Size ($BS) | GPU 数 | 大致训练时间 (小时) |                                                                                              备注                                                                                              |
+| :-----------------------------------------: | :-------------------: | :----: | :-----------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 |                     DDP                     |           1           |   1    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
 |                     DDP                     |           1           |   2    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
 |                 DDP + FP16                  |           1           |   1    |         NA          | OOM Error RuntimeError: CUDA out of memory. Tried to allocate 40.00 MiB (GPU 0; 23.65 GiB total capacity; 22.27 GiB already allocated; 20.31 MiB free; 22.76 GiB reserved in total by PyTorch) |
-|      FSDP (配置: min_num_params = 2K)       |           5           |   2    |         0.6         |                                                              |
-| FSDP (配置: min_num_params = 2K + CPU 卸载) |          10           |   1    |          3          |                                                              |
-| FSDP (配置: min_num_params = 2K + CPU 卸载) |          14           |   2    |        1.16         |                                                              |
+|      FSDP (配置: min_num_params = 2K)       |           5           |   2    |         0.6         |                                                                                                                                                                                                |
+| FSDP (配置: min_num_params = 2K + CPU 卸载) |          10           |   1    |          3          |                                                                                                                                                                                                |
+| FSDP (配置: min_num_params = 2K + CPU 卸载) |          14           |   2    |        1.16         |                                                                                                                                                                                                |
 
 表 2: GPT-2 XL (1.5B) 模型上的 FSDP 基准测试
 
@@ -295,8 +285,6 @@ GPT 模型使用 [minGPT](https://github.com/karpathy/minGPT) 实现。随机生
 
 ![img](https://pytorch.org/assets/images/1t_thought.png)
 
-
-
 ## Accelerate 的 FSDP 集成的功能和限制
 
 下面，我们深入了解以下 Accelerate 对 FSDP 的集成中，支持了那些功能，有什么已知的限制。
@@ -305,7 +293,7 @@ GPT 模型使用 [minGPT](https://github.com/karpathy/minGPT) 实现。随机生
 
 **命令行支持的配置:**
 
-1. **分片策略**: [1] FULL_SHARD, [2] SHARD_GRAD_OP
+1. **分片策略**: \[1\] FULL_SHARD, \[2\] SHARD_GRAD_OP
 2. **Min Num Params**: FSDP 默认自动包装的最小参数量。
 3. **Offload Params**: 是否将参数和梯度卸载到 CPU。
 
@@ -315,7 +303,7 @@ GPT 模型使用 [minGPT](https://github.com/karpathy/minGPT) 实现。随机生
 
 有关这些选项的更多信息，请参阅 PyTorch [FullyShardedDataParallel](https://github.com/pytorch/pytorch/blob/0df2e863fbd5993a7b9e652910792bd21a516ff3/torch/distributed/fsdp/filled_sharded_data_parallel.py#L236) 代码。
 
-接下来，我们体会下 `min_num_params` 配置的重要性。以下内容摘自 [8]，它详细说明了 FSDP 自动包装策略的重要性。
+接下来，我们体会下 `min_num_params` 配置的重要性。以下内容摘自 \[8\]，它详细说明了 FSDP 自动包装策略的重要性。
 
 ![FSDP 自动包装策略的重要性](https://huggingface.co/blog/assets/62_pytorch_fsdp/auto_wrap_importance.png)
 
@@ -327,13 +315,9 @@ GPT 模型使用 [minGPT](https://github.com/karpathy/minGPT) 实现。随机生
 
 我们利用 Accelerate 的跟踪功能来记录训练和评估期间的峰值内存使用情况以及模型准确率指标。下图展示了 wandb [实验台](https://wandb.ai/smangrul/FSDP-Test?workspace=user-smangrul) 页面的截图。
 
-
-
 ![wandb 实验台](https://huggingface.co/blog/assets/62_pytorch_fsdp/wandb_run.png)
 
-
-
-我们可以看到，DDP 占用的内存是使用了自动模型包装功能的 FSDP 的两倍。不带自动模型包装的 FSDP 比带自动模型包装的 FSDP 的内存占用更多，但比 DDP 少得多。与 `min_num_params=1M` 时相比， `min_num_params=2k` 时带自动模型包装的 FSDP 占用的内存略少。这凸显了 FSDP 自动模型包装策略的重要性，用户应该调整 `min_num_params` 以找到能显著节省内存又不会导致大量通信开销的设置。如 [8] 中所述，PyTorch 团队也在为此开发自动配置调优工具。
+我们可以看到，DDP 占用的内存是使用了自动模型包装功能的 FSDP 的两倍。不带自动模型包装的 FSDP 比带自动模型包装的 FSDP 的内存占用更多，但比 DDP 少得多。与 `min_num_params=1M` 时相比， `min_num_params=2k` 时带自动模型包装的 FSDP 占用的内存略少。这凸显了 FSDP 自动模型包装策略的重要性，用户应该调整 `min_num_params` 以找到能显著节省内存又不会导致大量通信开销的设置。如 \[8\] 中所述，PyTorch 团队也在为此开发自动配置调优工具。
 
 ### **需要注意的一些事项**
 
@@ -362,7 +346,7 @@ optimizer = torch.optim.AdamW(params=model.parameters(), lr=lr)
 
   > FSDP Warning: When using FSDP, several parameter groups will be conflated into a single one due to nested module wrapping and parameter flattening.
 
-告警信息表明，在使用 FSDP 对模型进行包装后，之前创建的参数组信息丢失了。因为 FSDP 会将嵌套式的模块参数摊平为一维数组 (一个数组可能包含多个子模块的参数)。举个例子，下面是 GPU 0 上 FSDP 模型的有名称的参数 (当使用 2 个 GPU 时，FSDP 会把第一个分片的参数给 GPU 0， 因此其一维数组中大约会有 55M (110M / 2) 个参数)。此时，如果我们在 FSDP 包装前将 BERT-Base 模型的 [bias, LayerNorm.weight] 参数的权重衰减设为 0，则在模型包装后，该设置将无效。原因是，你可以看到下面这些字符串中均已不含这俩参数的名字，这俩参数已经被并入了其他层。想要了解更多细节，可参阅本 [问题](https://github.com/pytorch/pytorch/issues/76501) (其中写道: `原模型参数没有 .grads 属性意味着它们无法单独被优化器优化 (这就是我们为什么不能支持对多组参数设置不同的优化器超参)` )。
+告警信息表明，在使用 FSDP 对模型进行包装后，之前创建的参数组信息丢失了。因为 FSDP 会将嵌套式的模块参数摊平为一维数组 (一个数组可能包含多个子模块的参数)。举个例子，下面是 GPU 0 上 FSDP 模型的有名称的参数 (当使用 2 个 GPU 时，FSDP 会把第一个分片的参数给 GPU 0， 因此其一维数组中大约会有 55M (110M / 2) 个参数)。此时，如果我们在 FSDP 包装前将 BERT-Base 模型的 \[bias, LayerNorm.weight\] 参数的权重衰减设为 0，则在模型包装后，该设置将无效。原因是，你可以看到下面这些字符串中均已不含这俩参数的名字，这俩参数已经被并入了其他层。想要了解更多细节，可参阅本 [问题](https://github.com/pytorch/pytorch/issues/76501) (其中写道: `原模型参数没有 .grads 属性意味着它们无法单独被优化器优化 (这就是我们为什么不能支持对多组参数设置不同的优化器超参)` )。
 
 ```
 {
@@ -376,29 +360,28 @@ optimizer = torch.optim.AdamW(params=model.parameters(), lr=lr)
 
 - 如果是多模型情况，须在创建优化器之前调用模型 `prepare` 方法，否则会抛出错误。
 
-  
-
 ## Reference
 
-[1] [Train Large, Then Compress: Rethinking Model Size for Efficient Training and Inference of Transformers](http://nlp.cs.berkeley.edu/pubs/Li-Wallace-Shen-Lin-Keutzer-Klein-Gonzalez_2020_Transformers_paper.pdf)
+\[1\] [Train Large, Then Compress: Rethinking Model Size for Efficient Training and Inference of Transformers](http://nlp.cs.berkeley.edu/pubs/Li-Wallace-Shen-Lin-Keutzer-Klein-Gonzalez_2020_Transformers_paper.pdf)
 
-[2] [ZeRO: Memory Optimizations Toward Training Trillion Parameter Models](https://arxiv.org/pdf/1910.02054v3.pdf)
+\[2\] [ZeRO: Memory Optimizations Toward Training Trillion Parameter Models](https://arxiv.org/pdf/1910.02054v3.pdf)
 
-[3] [DeepSpeed: Extreme-scale model training for everyone - Microsoft Research](https://www.microsoft.com/en-us/research/blog/deepspeed-extreme-scale-model-training-for-everyone/)
+\[3\] [DeepSpeed: Extreme-scale model training for everyone - Microsoft Research](https://www.microsoft.com/en-us/research/blog/deepspeed-extreme-scale-model-training-for-everyone/)
 
-[4] [Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism](https://arxiv.org/pdf/1909.08053.pdf)
+\[4\] [Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism](https://arxiv.org/pdf/1909.08053.pdf)
 
-[5] [Introducing GPipe, an Open Source Library for Efficiently Training Large-scale Neural Network Models](https://ai.googleblog.com/2019/03/introducing-gpipe-open-source-library.html)
+\[5\] [Introducing GPipe, an Open Source Library for Efficiently Training Large-scale Neural Network Models](https://ai.googleblog.com/2019/03/introducing-gpipe-open-source-library.html)
 
-[6] [Which hardware do you need to train a 176B parameters model?](https://bigscience.huggingface.co/blog/which-hardware-to-train-a-176b-parameters-model)
+\[6\] [Which hardware do you need to train a 176B parameters model?](https://bigscience.huggingface.co/blog/which-hardware-to-train-a-176b-parameters-model)
 
-[7] [Introducing PyTorch Fully Sharded Data Parallel (FSDP) API | PyTorch](https://pytorch.org/blog/introducing-pytorch-fully-sharded-data-parallel-api/)
+\[7\] [Introducing PyTorch Fully Sharded Data Parallel (FSDP) API | PyTorch](https://pytorch.org/blog/introducing-pytorch-fully-sharded-data-parallel-api/)
 
 - https://pytorch.org/docs/stable/fsdp.html
 
 - https://pytorch.org/blog/introducing-pytorch-fully-sharded-data-parallel-api/
 
 - https://engineering.fb.com/2021/07/15/open-source/fsdp/
-- https://pytorch.org/tutorials/intermediate/FSDP_advanced_tutorial.html?highlight=fsdp
-- https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
 
+- https://pytorch.org/tutorials/intermediate/FSDP_advanced_tutorial.html?highlight=fsdp
+
+- https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes

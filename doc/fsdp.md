@@ -19,8 +19,8 @@
 FSDP 的工作流程大致如下：
 
 - 在构造函数中
-  - 分片模型参数，每个 rank 只保留自己的分片。
 
+  - 分片模型参数，每个 rank 只保留自己的分片。
 
 - 在前向过程中
 
@@ -29,7 +29,6 @@ FSDP 的工作流程大致如下：
   - 运行前向计算。
 
   - 丢弃刚刚收集的参数分片。
-
 
 - 在反向过程中
 
@@ -40,7 +39,6 @@ FSDP 的工作流程大致如下：
   - 运行 reduce_scatter 同步梯度。
 
   - 丢弃参数。
-
 
 FSDP 的分片可以看作是将 DDP 的梯度 all-reduce 分解为 reduce-scatter 和 all-gather。具体来说，在反向传播过程中，FSDP 减少并分散梯度，确保每个 rank 拥有梯度的分片。然后在优化器步骤中更新相应参数的分片。最后，在后续的前向传播中，执行 all-gather 操作以收集和组合更新的参数分片。
 
@@ -216,7 +214,7 @@ def fsdp_main(rank, world_size, args):
         size_based_auto_wrap_policy, min_num_params=100
     )
     torch.cuda.set_device(rank)
-    
+
     init_start_event = torch.cuda.Event(enable_timing=True)
     init_end_event = torch.cuda.Event(enable_timing=True)
 
@@ -245,7 +243,7 @@ def fsdp_main(rank, world_size, args):
         states = model.state_dict()
         if rank == 0:
             torch.save(states, "mnist_cnn.pt")
-    
+
     cleanup()
 ```
 
@@ -310,8 +308,6 @@ FullyShardedDataParallel(
 以下是 FSDP MNIST 训练在 AWS EC2 g4dn.12xlarge 实例（4 个 GPU）上的峰值内存使用情况，由 PyTorch Profiler 捕获。
 
 ![FSDP 峰值内存使用](/_static/img/distributed/FSDP_memory.gif)
-
-
 
 应用 `auto_wrap_policy`，否则，FSDP 会将整个模型放在一个 FSDP 单元中，这会降低计算效率和内存效率。其工作原理是，假设您的模型包含 100 个线性层。如果您执行 `FSDP(model)`，将只有一个 FSDP 单元包装整个模型。在这种情况下，allgather 将收集所有 100 个线性层的完整参数，因此不会节省 CUDA 内存用于参数分片。此外，对于所有 100 个线性层，只有一个阻塞的 allgather 调用，因此不会在层之间进行通信和计算的重叠。
 
