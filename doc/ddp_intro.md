@@ -194,7 +194,7 @@ if __name__ == "__main__":
     run_demo(demo_model_parallel, world_size)
 ```
 
-## 使用 torch.distributed.run/torchrun 初始化 DDP
+## 使用 torchrun 初始化 DDP
 
 我们可以利用 PyTorch Elastic 来简化 DDP 代码并更轻松地初始化作业。让我们仍然使用 Toymodel 示例并创建一个名为 `elastic_ddp.py` 的文件。
 
@@ -262,9 +262,11 @@ export MASTER_ADDR=$(scontrol show hostname ${SLURM_NODELIST} | head -n 1)
 
 有关 Elastic run 的更多信息，请参阅 [快速入门文档](https://pytorch.org/docs/stable/elastic/quickstart.html)。
 
-## Multiprocessing-distributed  VS torchrun
+## 分布式程序启动脚本
 
-主要差异包括：
+### mp.spawn 对比 torchrun
+
+Multiprocessing-distributed 和Torchrun 的主要差异包括：
 
 1. 启动方式
 
@@ -293,7 +295,7 @@ export MASTER_ADDR=$(scontrol show hostname ${SLURM_NODELIST} | head -n 1)
 
 下面我给你展示两种方式的简单代码示例：
 
-### Multiprocessing-distributed 示例：
+### mp.spawn 示例：
 
 ```python
 import torch
@@ -338,8 +340,7 @@ if __name__ == '__main__':
 ```
 
 启动命令：
-
-- Multiprocessing-distributed：需要自定义启动脚本
+- Multiprocessing-distributed：`python train.py`
 - Torchrun：`torchrun --nproc_per_node=4 train.py`
 
 总的来说，torchrun 更加现代和便捷，推荐在新项目中使用。对于需要精细控制的场景，multiprocessing-distributed 仍然是一个好选择。
@@ -381,22 +382,18 @@ device = torch.device(f'cuda:{local_rank}')
 ```
 
 典型场景：
-
-- 4卡机器：
-
+- 单机4卡机器：
   - `world_size` = 4
   - `rank` 可能是 0, 1, 2, 3
   - `local_rank` 也是 0, 1, 2, 3
   - 每个进程使用对应编号的 GPU
 
-- 2机器各4卡：
-
+- 2台机器各4卡：
   - 第一台机器：`rank` 0-3, `local_rank` 0-3
   - 第二台机器：`rank` 4-7, `local_rank` 0-3
   - 确保每台机器的 `local_rank` 从 0 开始
 
-启动命令会自动设置这些环境变量：
-
+Torchrun 启动命令会自动设置这些环境变量：
 ```bash
 torchrun --nproc_per_node=4 train.py
 ```
